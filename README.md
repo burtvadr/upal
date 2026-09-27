@@ -41,13 +41,17 @@ This approach provides a pragmatic mechanism to encapsulate both application exe
 
 ---
 
-## 2. Problem: Package Manager Limitations
+## 2. Problem: Packages Limitations
 
-Most package managers install to rigid, hard-coded paths:
+Most packages installs to rigid, hard-coded paths:
 
-1. **Binary location:** `/usr/bin`, `/var/lib/flatpak`, `~/.local/share/flatpak`, etc.
-2. **Data location:** `~/.var/app/`, `~/.config/`, `~/.local/share/`, etc.
+1. **Binary location:** `/usr/bin/`, `/bin/`, `/sbin/`, `/opt/` etc.
+2. **Data location:** `~/.config/`, `~/.local/share/`, `~/.local/state/` etc.
 
+But Flatpak helps with more standardized structure
+
+1. **Binary location:** `/var/lib/flatpak/app/`, `~/.local/share/flatpak/app`
+2. **Data location:** `~/.var/app/`
 **Consequences:**
 
 * Users cannot easily move an installation to a secondary drive to free root partition space.
@@ -99,10 +103,10 @@ $PORTABLE_ROOT/
 If you want to go even more minimal:
 
 ```
-$PORTABLE_ROOT/
-├── Brave                           # one-click executable
+$PORTABLE_ROOT/                     # web apps
+├── Obsidian                        # one-click executable
 ├── Discord                         # one-click executable
-├── Steam                           # one-click executable
+├── Teams                           # one-click executable
 ```
 
 The setup above effectively works as a script that installs the package from any source (native package manager, Flatpak, AppImage, GitHub release, tarball, etc.) and executes it, with one click.
@@ -197,7 +201,7 @@ Some package formats have deep, predictable binary layouts (e.g., Flatpak runtim
 └── data
 ```
 
-By dragging any image onto `$PORTABLE_ROOT`, we should automatically apply it by editing the `icon=` line on the desktop file — whether it's a system-wide install at `/usr/share/applications/$PACKAGE_ID.desktop` or a user install at `~/.local/share/applications/$PACKAGE_ID.desktop`.
+By dragging any image onto `$PORTABLE_ROOT`, we should automatically apply it by editing the `icon=` line on the desktop file — whether it's a system-wide install at `/usr/share/applications/$PKG.desktop` or a user install at `~/.local/share/applications/$PKG.desktop`.
 
 * Users may also want to keep a custom `.desktop` file. Like everything here, we should automatically apply it by its presence.
 * If you don't want a desktop file, just don't have any in `$PORTABLE_ROOT`.
@@ -214,7 +218,7 @@ By dragging any image onto `$PORTABLE_ROOT`, we should automatically apply it by
 
 If a desktop file is already included in `$PORTABLE_ROOT`, just edit the `icon=` line on this desktop file. No need to touch the system or user application directories.
 
-## 5.1 Portable Folder Icon Integration
+## 5 Portable Folder Icon Integration
 
 The portable directory should visually represent the application by automatically applying an icon to the **folder itself** `"$PORTABLE_ROOT"`.
 
@@ -239,11 +243,11 @@ The icon assignment is metadata-based and does not modify the directory contents
 
 ---
 
-## 6. Automating Permissions (Optional, On by Default)
+## 6. Flatpak Automating Permissions (Optional, On by Default)
 
 At launch time the runner evaluates the override file state:
 
-* **If the override file for `$PACKAGE_ID` does not exist or is empty:**
+* **If the override file for `$PKG` does not exist or is empty:**
   * The runner writes the portable override into this location (if one is defined internally).
   * This enables the required permissions for the portable app.
 
@@ -254,45 +258,9 @@ At launch time the runner evaluates the override file state:
 
 * **Override files should be stored internally inside the own `runner`.** No annoying extra files or hidden files.
 
-### Path and Username Normalization
-
-For migrating between distros that use `/run/media` or on a system with a new username:
-
-* Convert usernames and media mount inside paths:
-
-```
-/media/burtjo/... → /run/media/jason/...
-```
-
-**Example:**
-
-```
-[Context]
-devices=dri
-filesystems=/media/burtjo/SSD/SteamLIB;/media/burtjo/SSDpkg/Gaming/Steam
-```
-
-becomes
-
-```
-[Context]
-devices=dri
-filesystems=/run/media/jason/SSD/SteamLIB;/run/media/jason/SSDpkg/Gaming/Steam
-```
-
-The resulting content is written directly to the appropriate override location.
-
----
-
 ## 7. Symlink Trick
 
-Package managers look for user data in different locations depending on the format:
-
-* Flatpak: `~/.var/app/$PACKAGE_ID`
-* Native packages: `~/.config/$PACKAGE_ID`, `~/.local/share/$PACKAGE_ID`
-* Custom: any path the application uses
-
-Using symlinks to achieve portable applications — by redirecting those locations to the portable folder — without patching the package manager.
+Using symlinks to achieve portable applications by redirecting those locations to the portable folder without patching the package manager.
 
 This symlink method works for any package format, though complexity can increase with deeply nested or runtime-managed layouts.
 
@@ -304,23 +272,26 @@ This symlink method works for any package format, though complexity can increase
 
 1. **Automatically install the package from the appropriate source** — whether that's the distro's package manager (`apt`, `dnf`, `pacman`), Flatpak + Flathub, a GitHub release tarball, or a direct download. The backend is abstracted.
 
-2. **Compute its current absolute path** for `$PORTABLE_ROOT`. Example: `/media/user/USB/Games/Osu`
+2. **Compute its current absolute path** for `$PORTABLE_ROOT`. Example:
 
-3. **Define the `"$DATA"` and `"$BIN"` directories** using the contents-aware method, or the language assumption if contents-aware fails.
+```
+#!/bin/sh
+PORTABLE_ROOT=$(cd -P -- "$(dirname -- "$0")" && command pwd -P)
+```
 
-4. **Define a valid `$PACKAGE_ID`:**
+4. **Define the `"$DATA"` and `"$BIN"` directories** using the contents-aware method, or assumption if contents-aware fails.
+
+5. **Define a valid `$PKG`:**
    * We need a constant and unique identifier for the application.
-   * Check if `$BIN/current/active/export/bin/$PACKAGE_ID` exists (for Flatpak).
-   * Check if the runner filename is a valid `$PACKAGE_ID`.
-   * Store internally — no extra files.
+   * Check if the runner filename is a valid `$PKG`.
+   * Store internally, no extra files.
 
-5. **Definitions:**
-   * After `$PACKAGE_ID` is detected, define its own absolute path as `$PORTABLE_ROOT`.
-   * Define `[USER_MODE]` for user install (default) or `[SYSTEM_MODE]` for system-wide install.
+6. **Definitions:**
+   * After `$PKG` is detected or defined manually
    * Define `$BIN_TARGET` based on the package format's binary location.
-   * Define `$DESKTOP_FILE` — either from `$PORTABLE_ROOT` or from the package's export path.
+   * Define `$DESKTOP_FILE` either from `$PORTABLE_ROOT` or from the package's export path.
 
-6. **If it's already installed:**
+7. **If it's already installed:**
    * Compare how it's installed with how the `[Portable Path]` configuration is determined.
    * If the data target is a broken symlink (from a previous location), remove it.
    * If the data target is not a symlink and the user language assumption applies:
@@ -330,26 +301,26 @@ This symlink method works for any package format, though complexity can increase
    * If `$BIN_TARGET` is a broken symlink, remove it.
    * If `$BIN_TARGET` is a functional symlink, delete it to prepare for a new link.
 
-7. **If it's already installed at an opposing mode (system-wide vs user):**
+8. **If it's already installed at an opposing mode (system-wide vs user):**
    * Uninstall and reinstall to the right mode by default.
    * Or migrate: wipe internal `"$BIN"` and move the host binaries to `"$BIN/"`, then symlink.
    * If not using a `[LOCAL_DESKTOP_FILE]` and `DESKTOP_INTEGRATION=1`:
      * Move the desktop file to the user location.
      * Symlink appropriately.
 
-8. **Linking:**
+9. **Linking:**
    * Dynamically symlink what is needed based on the configuration of the directories layout.
    * Symlink `"$DATA"` to the host data location.
    * Symlink `"$BIN"` to `$BIN_TARGET`.
    * Symlink `[LOCAL_DESKTOP_FILE]` to `[DESKTOP_FILE]`.
 
-9. **If it's not already installed:**
+10. **If it's not already installed:**
    * Install according to configuration.
 
-10. **Icon phase:**
+11. **Icon phase:**
     * If `[ICON]` exists, change the `[DESKTOP_FILE]` or `[LOCAL_DESKTOP_FILE]` (if it exists) `icon=` line to include the `[ICON]` absolute path.
 
-11. **Execution phase:**
+12. **Execution phase:**
     * Just before execution, you can have a shell script for handling anything you want with the set variables.
     * The runner executes the application.
     * Option: provide a toggle to run with a terminal (off by default).
