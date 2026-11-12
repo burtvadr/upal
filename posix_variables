@@ -20,6 +20,7 @@ DESKTOP_REWRITE_EXEC="yes"
 # Multi-entry suites: name|bindir|executable|desktop|icon|icon_id
 ENTRIES=""
 DEFAULT_ENTRY=""
+LAUNCHER=""
 ICON_NAME=""
 ICON_ID=""
 ICON_SOURCE="$PORTABLE_ROOT"
@@ -541,6 +542,30 @@ if [ -n "$MAN" ] && [ -d "$MAN" ]; then
             ln -sfn "$src" "$dst" || need_root "link $dst"
         fi
     done
+fi
+
+# Optional external launcher, such as a chooser. It runs when no entry name
+# is given and is bypassed by `run <entry>`.
+if [ -n "$LAUNCHER" ]; then
+    _launcher_arg=${1:-}
+    _launcher_is_entry=0
+    if [ -n "$_launcher_arg" ]; then
+        while IFS='|' read -r _name _bindir _exec _desktop _icon _icon_id; do
+            if [ "$_name" = "$_launcher_arg" ]; then
+                _launcher_is_entry=1
+                break
+            fi
+        done <<EOF
+$ENTRIES
+EOF
+    fi
+    if [ "$_launcher_is_entry" = "0" ]; then
+        [ -x "$LAUNCHER" ] || {
+            printf 'Missing launcher: %s\n' "$LAUNCHER" >&2
+            exit 1
+        }
+        exec "$LAUNCHER" "$@"
+    fi
 fi
 
 # Launch
