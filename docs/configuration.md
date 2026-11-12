@@ -4,7 +4,7 @@ The runner is one file. The header at the top is the configuration; the rest is 
 
 Data is the primary use case. Binaries are replaceable; the data mapping is the part that must survive. Host-provided binaries are the default, and folder-owned binaries are opt-in.
 
-> The reference template (`posix_variables`) implements the `link` and binary `out` subset today. The `env`, `link-out`, `bind`, and auto-detection rules below are the target contract.
+> The reference template (`posix_variables`) implements the `link`, binary `out`, and icon subset today. The `env`, `link-out`, `bind`, and bin/dat auto-detection rules below are the target contract.
 
 ## Header
 
@@ -51,7 +51,7 @@ KILL_TERMINAL="yes"
 | Variable | Default | Meaning |
 |---|---|---|
 | `PKG` | `""` | Package or packages to install, space-separated. Empty means search for `BIN_NAMES`, or use the runner filename. |
-| `PACKAGE_MANAGER` | `auto` | `auto`/`native` (PackageKit chain), `distro` (native only), `flatpak`, or `none`. |
+| `PACKAGE_MANAGER` | `auto` | `auto`/`native` (PackageKit chain), `distro`, `flatpak`, `snap`, `nix`, `brew`, `toolpak`, `pkgit`, `cpak`, or `none`. |
 | `FLATPAK_ID` | `""` | Flatpak application ID. Required by the Flatpak profile; the data path is derived. |
 | `BIN_NAMES` | `""` | Commands to check, link, and run. Empty means the words in `PKG`, or the runner filename. |
 | `DAT_SOURCE` | `""` | Portable data directory. Empty means detect; if `DAT_TARGET` is set, defaults to `$PORTABLE_ROOT/dat`. |
@@ -215,16 +215,24 @@ BIN_MODE="copy"
 BIN_SOURCE="$PORTABLE_ROOT/bin"
 ```
 
-## Package manager
+## Backends
 
-`PACKAGE_MANAGER` controls how missing commands are obtained.
+`PACKAGE_MANAGER` selects the backend. Support means the runner owns the install and run logic for that backend; there is no universal package API.
 
-| Value | Behavior |
-|---|---|
-| `auto` / `native` | `pkgcli` > `pkcon` > native |
-| `distro` | native package manager only |
-| `flatpak` | `flatpak install` and `flatpak run` with `FLATPAK_ID` |
-| `none` | never install |
+| Value | Install | Run |
+|---|---|---|
+| `auto` / `native` | `pkgcli` > `pkcon` > native | command on `PATH` |
+| `distro` | native package manager only | command on `PATH` |
+| `flatpak` | `flatpak install` | `flatpak run "$FLATPAK_ID"` |
+| `snap` | `snap install` | `snap run "$PKG"` |
+| `nix` | `nix profile install nixpkgs#<pkg>` | `nix run nixpkgs#<pkg>` |
+| `brew` | `brew install` | command on `PATH` |
+| `toolpak` | adapter-defined | adapter-defined |
+| `pkgit` | adapter-defined, source build | built binary |
+| `cpak` | `cpak install <source>` | `cpak run <pkg>` |
+| `none` | never | command on `PATH` |
+
+Toolpak and pkgit are adapter-defined: the runner needs their install and run commands and does not assume a CLI. cpak is an OCI application package format: `cpak install` takes a source such as `github.com/owner/repo`, and `cpak run` takes the package and an optional command. When the backend is not a package manager, use `app_install` and `app_run` to own the steps.
 
 Native mapping:
 
@@ -305,10 +313,33 @@ app_post_link() {
 }
 ```
 
+For a stack or an adapter, the install and launch steps replace the package command:
+
+```sh
+app_install() {
+    docker compose pull
+}
+
+app_run() {
+    docker compose up -d
+    xdg-open "http://localhost:2283"
+}
+```
+
 - `app_env` runs before the application starts.
 - `app_pre_link` runs before symlinks are changed.
 - `app_post_link` runs after desktop and icon integration.
+- `app_install` replaces the backend install step. Use it for stacks and adapters.
+- `app_run` replaces the default launch. It receives the original arguments; use it for container stacks such as Immich.
 - `redirect <portable> <host> <method>` is available to hooks for extra paths, such as Heroic's `~/Games`. The header stays one mapping per role; the hook handles the exceptions.
+
+## Icons
+
+Any image at the portable root, or in `ICON_SOURCE`, is a candidate. The first one becomes the desktop and folder icon; `ICON_NAME` pins a specific file. Detection uses the MIME type, not the extension, so a PNG named `icon.svg` still works.
+
+- `ICON_TARGET` optionally installs the image into an icon theme directory. Empty means the desktop entry points at the absolute portable path.
+- `gio` sets `metadata::custom-icon` on the portable root and on `DAT_TARGET`.
+- Deleting the image resets both: the folder icon is unset with `gio set -t unset`, and the desktop `Icon=` falls back to the package or application name. The next run restores the image icon if a new image appears.
 
 ## Environment
 

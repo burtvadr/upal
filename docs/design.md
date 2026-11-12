@@ -35,12 +35,12 @@ Binaries use the same idea with a different unit: a command name, a source direc
 2. Preflight: filesystem type, writability, dry-run.
 3. Resolve `PKG` and `BIN_NAMES`.
 4. Detect binaries and data.
-5. Install missing packages, one per `PKG` word.
+5. Install missing packages, one per `PKG` word, or call `app_install`.
 6. Link binaries according to `BIN_MODE`.
-7. Link data according to `DAT_METHOD`: move host data in on first link, rotate conflicts.
+7. Link data according to `DAT_METHOD`: move host data in on first link, back up conflicts as `.bak`.
 8. Link and rewrite desktop files, icon, man pages.
 9. Run `app_env`, `app_pre_link`, `app_post_link`.
-10. Launch the application with the original arguments.
+10. Launch the application with the original arguments, or call `app_run`.
 11. Close the terminal only when `KILL_TERMINAL=yes`.
 
 The runner is idempotent. Running it twice changes nothing.
@@ -69,17 +69,31 @@ Therefore:
 
 This is why the configuration stays per runner instead of becoming a system-wide policy.
 
-## Package manager abstraction
+## Backends
 
-Missing binaries are resolved through a backend chain, not bundled by default:
+Missing binaries are resolved through a backend, not bundled by default. `PACKAGE_MANAGER` selects it:
 
-```text
-pkgcli > pkcon > native (apt, dnf, pacman/yay, zypper)
-```
+| Backend | Install | Run |
+|---|---|---|
+| `auto` / `native` | `pkgcli` > `pkcon` > `apt`/`dnf`/`pacman`+`yay`/`zypper` | command on `PATH` |
+| `distro` | native package manager only | command on `PATH` |
+| `flatpak` | `flatpak install` | `flatpak run "$FLATPAK_ID"` |
+| `snap` | `snap install` | `snap run "$PKG"` |
+| `nix` | `nix profile install` | `nix run` |
+| `brew` | `brew install` | command on `PATH` |
+| `toolpak`, `pkgit` | adapter-defined | adapter-defined |
+| `cpak` | `cpak install <source>` | `cpak run <pkg>` |
+| `none` | never | command on `PATH` |
 
-`auto` is the default and `native` is an alias. `distro` forces the distro manager only. `flatpak` uses `FLATPAK_ID`. `none` disables installation.
+`auto` is the default and `native` is an alias. `distro` forces the distro manager only. The runner checks commands first, installs packages only when needed, and searches only when the package name is unknown. Ambiguous search results abort. A working host binary is never replaced.
 
-The runner checks commands first, installs packages only when needed, and searches only when the package name is unknown. Ambiguous search results abort. A working host binary is never replaced.
+A backend is an adapter, not an abstraction over a shared package API: each one owns its install and run commands. When the backend has no usable CLI, `app_install` and `app_run` take over. This is also how non-app stacks fit without adding a new engine.
+
+## Discovery tooling
+
+A planned GTK tool wraps `strace`/`ptrace` to observe which paths an application touches, group them by XDG role, and suggest `DAT_TARGET`, `DAT_METHOD`, and `BIN_MODE`.
+
+It is an authoring tool, not part of the runner. ptrace permissions, Flatpak sandboxes, and filesystem noise make tracing unsuitable for launch-time decisions. The runner keeps explicit configuration plus content detection; the GUI only writes the header.
 
 ## Flatpak profile
 
@@ -89,6 +103,18 @@ The binary location is irrelevant to the runner because it never links the Flatp
 
 Applications that write outside the sandbox data directory, such as Heroic with `~/Games`, need an explicit extra mapping in a hook. The standard path is automatic; the exception is opt-in.
 
+## Non-app stacks
+
+The abstraction is data plus a lifecycle, not an ELF binary. Immich is the proof: a Docker Compose web stack wrapped as one portable folder. The compose project directory is the data; `library/`, `postgres/`, and `run/` stay next to the manager file, and relative paths in the compose file make the folder movable.
+
+The runner does not learn Docker. `app_run` starts the stack and opens the browser; `app_install` can pull images. One manager file remains the entry point. Helper scripts such as `up-immich` and `down-immich` are part of the stack, not additional managers.
+
+## Icons
+
+Any image in the portable root, or in `ICON_SOURCE`, becomes the desktop and folder icon; MIME type decides, not the extension. `ICON_NAME` pins one file.
+
+The icon is not copied into a theme by default. The desktop entry points at the absolute path, and `gio` sets `metadata::custom-icon` on the folder and on the data target. Deleting the image is the reset: the next run unsets the folder metadata and falls back to the package or application name in the desktop entry. No state file records the previous icon, so the folder can be moved without breaking the reset.
+
 ## POSIX first
 
 The shell engine is the reference for three reasons:
@@ -97,7 +123,7 @@ The shell engine is the reference for three reasons:
 2. The behavior is transparent: `ln`, `mv`, `command -v`, and `findmnt` are visible.
 3. It is the test oracle for any future engine.
 
-The shell engine is roughly 200 lines and has no performance-sensitive work. A Rust port is justified by portability, not speed.
+The shell engine is about 260 lines and has no performance-sensitive work. A Rust port is justified by portability, not speed.
 
 ## Rust and Windows
 
@@ -132,15 +158,16 @@ It is the last resort for applications that replace symlinks. Document it, imple
 - Data conversion between application versions or distributions. UPAL backs up; it does not migrate.
 - A config file or a daemon.
 - Bundling every library.
-- A GUI.
+- A GUI in the runner. The discovery tool is a separate authoring aid.
 - A package format. UPAL is a layer over the host's package manager, not a replacement.
 
 ## Roadmap
 
 1. Freeze the contract in this repository.
 2. Harden the POSIX engine: safety, dry-run, tests.
-3. Add `env`, `link-out`, auto-detection, and the package manager chain.
+3. Add `env`, `link-out`, auto-detection, and the backend adapters.
 4. Port the proof-of-concept runners and add hooks to the template updater.
-5. Add XDG mapping, Flatpak, and the search fallback.
-6. Build the Rust engine against the same fixtures.
-7. Add Windows support as a native binary.
+5. Add XDG mapping, Flatpak, Snap, Nix, Homebrew, and the search fallback.
+6. Build the GTK discovery tool on `strace`/`ptrace`.
+7. Build the Rust engine against the same fixtures.
+8. Add Windows support as a native binary.

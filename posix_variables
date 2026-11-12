@@ -16,14 +16,27 @@ BIN_TARGET=""
 DESKTOP_FILE_NAME=""
 DESKTOP_FILE_SOURCE="$PORTABLE_ROOT"
 DESKTOP_FILE_TARGET="$HOME/.local/share/applications"
-ICON_NAME="$PKG.svg"
-ICON_SOURCE=""
+ICON_NAME=""
+ICON_SOURCE="$PORTABLE_ROOT"
 ICON_TARGET=""
-ICON="$ICON_SOURCE/$ICON_NAME"
+ICON=""
 CACHE_SOURCE="" 
 CACHE_TARGET="" 
 MAN="$BIN_SOURCE"
 KILL_TERMINAL="yes"
+
+# First image in ICON_SOURCE becomes the icon; ICON_NAME pins one
+if [ -z "$ICON_NAME" ] && [ -d "$ICON_SOURCE" ]; then
+    for f in "$ICON_SOURCE"/*; do
+        [ -f "$f" ] || continue
+        case "$(file -b --mime-type -- "$f" 2>/dev/null)" in
+            image/*) ICON_NAME=${f##*/}; break ;;
+        esac
+    done
+fi
+if [ -n "$ICON_NAME" ]; then
+    ICON="$ICON_SOURCE/$ICON_NAME"
+fi
 
 # Check whether any target path is on a filesystem without POSIX permission support
 paths="
@@ -105,8 +118,16 @@ fi
 
 # resolve desktop file icons
 if [ -n "$DESKTOP_FILE_NAME" ]; then
+    if [ -n "$ICON" ]; then
+        _icon="$ICON"
+    else
+        _icon="${NAME:-$PKG}"
+    fi
     for file in "$DESKTOP_FILE_SOURCE"/"$DESKTOP_FILE_NAME"; do
-        sed -i "s|^Icon=.*|Icon=${ICON_SOURCE}/${ICON_NAME}|" "$file"
+        [ -e "$file" ] || continue
+        if [ -n "$_icon" ]; then
+            sed -i "s|^Icon=.*|Icon=$_icon|" "$file"
+        fi
     done
 fi
 
@@ -225,9 +246,15 @@ elif [ -f "$BIN_SOURCE" ] || [ -L "$BIN_SOURCE" ]; then
 fi
 
 # gnome/nautilus integration
-if [ -e "$ICON" ]; then
-    gio set -t string "$PORTABLE_ROOT" metadata::custom-icon "file://$(readlink -f "$ICON")"
-    [ -n "$DAT_TARGET" ] && gio set -t string "$DAT_TARGET" metadata::custom-icon "file://$(readlink -f "$ICON")"
+if command -v gio >/dev/null 2>&1; then
+    if [ -n "$ICON" ] && [ -e "$ICON" ]; then
+        _icon_uri="file://$(readlink -f -- "$ICON")"
+        gio set -t string "$PORTABLE_ROOT" metadata::custom-icon "$_icon_uri"
+        [ -n "$DAT_TARGET" ] && gio set -t string "$DAT_TARGET" metadata::custom-icon "$_icon_uri"
+    else
+        gio set -t unset "$PORTABLE_ROOT" metadata::custom-icon 2>/dev/null
+        [ -n "$DAT_TARGET" ] && gio set -t unset "$DAT_TARGET" metadata::custom-icon 2>/dev/null
+    fi
 fi
 
 # Run the application

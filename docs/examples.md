@@ -1,8 +1,8 @@
 # Examples
 
-Each example is a complete portable root. Only the header changes; the engine is the same file.
+Each example is a complete portable root. Only the header and the app-specific hook block change; the engine is the same file.
 
-> These examples use the target header. The reference template implements the `link` and binary `out` subset; see the status table in the README.
+> These examples use the target header. The reference template implements the `link`, binary `out`, and icon subset; see the status table in the README.
 
 The examples are data-first. Binaries are optional; the host package manager can provide them.
 
@@ -150,17 +150,43 @@ app_pre_link() {
 
 ## adb: portable binaries and data
 
-The folder carries the Android tools; the host gets links.
+The folder carries the Android tools from Google; the host gets links. The only valuable data is `~/.android`.
 
 ```text
 adb/
 ├── runner
 ├── bin/
 │   ├── adb
+│   ├── adb.1
+│   ├── disconnected.png
+│   ├── etc1tool
 │   ├── fastboot
 │   ├── heimdall
-│   └── scrcpy
+│   ├── hprof-conv
+│   ├── icon.png
+│   ├── lib64
+│   ├── make_f2fs
+│   ├── make_f2fs_casefold
+│   ├── mke2fs
+│   ├── mke2fs.conf
+│   ├── NOTICE.txt
+│   ├── scrcpy
+│   ├── scrcpy.1
+│   ├── scrcpy.png
+│   ├── scrcpy-server
+│   ├── sndcpy
+│   ├── source.properties
+│   └── sqlite3
+├── camcpy.svg
 ├── dat/
+│   ├── adb.5037
+│   ├── adbkey
+│   ├── adbkey.pub
+│   ├── adb_known_hosts.pb
+│   ├── analytics.settings
+│   ├── cache
+│   ├── debug.keystore
+│   └── debug.keystore.lock
 ├── scrcpy.desktop
 ├── scrcpy.svg
 ├── sndcpy.desktop
@@ -190,9 +216,52 @@ app_post_link() {
 }
 ```
 
-`BIN_TARGET=""` means the first writable `PATH` directory, usually `~/.local/bin`. The runner links each binary there and backs up anything it replaces.
+`BIN_TARGET=""` means the first writable `PATH` directory, usually `~/.local/bin`. The runner links each executable there and backs up anything it replaces. Support files (`lib64`, `scrcpy-server`, the notices) stay in `bin/` next to the executables; only executable files are linked.
 
 The `app_pre_link` hook stops a running adb server before the data link changes. The `app_post_link` hook gives `sndcpy.desktop` its own icon.
+
+If you prefer distro packages, drop `bin/`, set `BIN_MODE="auto"`, and keep the same `dat/` mapping. The data does not change with the binary source.
+
+## Immich: a container stack as one app
+
+Immich is a web stack, not a desktop binary. The compose project directory is the portable data, so relative paths do the work.
+
+```text
+Immich/
+├── runner              # open-immich, the only manager file
+├── docker-compose.yml
+├── docker-compose.yml.bak
+├── library/
+├── postgres/
+├── run/
+├── up-immich
+├── down-immich
+├── stop-immich
+├── immich.desktop
+└── immich.svg
+```
+
+```sh
+PKG=""
+PACKAGE_MANAGER="none"
+BIN_NAMES=""
+DAT_SOURCE="$PORTABLE_ROOT"
+DAT_TARGET=""
+DAT_METHOD="none"
+DESKTOP_FILE_NAME="immich.desktop"
+ICON_NAME="immich.svg"
+NAME="Immich"
+
+app_run() {
+    cd "$PORTABLE_ROOT" || exit 1
+    docker compose up -d
+    xdg-open "http://localhost:2283"
+}
+```
+
+There is no host data link: `docker-compose.yml` uses relative paths (`./library`, `./postgres`, `./run`), so moving the folder moves the stack. `up-immich`, `down-immich`, and `stop-immich` are lifecycle helpers; `app_run` is what the desktop entry calls. `docker-compose.yml.bak` is an ordinary file backup, unrelated to the `.bak` data safety.
+
+`PACKAGE_MANAGER="none"` keeps the runner out of the package manager. Docker is the runtime; the runner only owns the entry point and the folder layout.
 
 ## Self-contained: binaries in the folder, no host links
 

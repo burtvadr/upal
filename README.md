@@ -90,17 +90,30 @@ Precedence, highest first:
 
 Detection never deletes a real file. Ambiguous layouts abort and print the candidates instead of guessing.
 
-## Package manager abstraction
+## Backends
 
-`PACKAGE_MANAGER` decides how missing binaries are obtained. The default chain is:
+`PACKAGE_MANAGER` selects the backend. Support means the runner owns the install and run logic for that backend; there is no universal package API.
 
-1. `pkgcli` — PackageKit-based, preferred when installed.
-2. `pkcon` — older PackageKit CLI; not present everywhere.
-3. native — `apt`/`apt-get` on Debian/Ubuntu, `dnf` on Fedora, `pacman` then `yay` on Arch, `zypper` on openSUSE.
+| Backend | Value | Install | Run |
+|---|---|---|---|
+| Native | `native` / `auto` | `pkgcli` > `pkcon` > `apt`/`dnf`/`pacman`+`yay`/`zypper` | command on `PATH` |
+| Distro only | `distro` | `apt`/`dnf`/`pacman`+`yay`/`zypper` | command on `PATH` |
+| Flatpak | `flatpak` | `flatpak install` | `flatpak run $FLATPAK_ID` |
+| Snap | `snap` | `snap install` | `snap run $PKG` |
+| Nix | `nix` | `nix profile install` | `nix run` |
+| Homebrew | `brew` | `brew install` | command on `PATH` |
+| Toolpak | `toolpak` | adapter | adapter |
+| pkgit | `pkgit` | adapter, source build | built binary |
+| cpak | `cpak` | `cpak install <source>` | `cpak run <pkg>` |
+| None | `none` | never | command on `PATH` |
 
-`PACKAGE_MANAGER="auto"` (the default) walks that chain. `native` is an alias. `distro` forces the distro manager only. `flatpak` uses `FLATPAK_ID`. `none` disables installation.
+`auto`/`native` walks `pkgcli` > `pkcon` > native. `distro` forces the distro manager only. The Flatpak profile derives its paths from `FLATPAK_ID`. Toolpak and pkgit are adapter-defined: the runner needs their install and run commands and does not assume a CLI. cpak is an OCI application package format: `cpak install` takes a source, `cpak run` takes the package.
 
 The runner checks `BIN_NAMES` first. If a command is missing, it installs `PKG`. If `PKG` is empty or the package name is unknown, it searches the backend and installs an exact match; several matches abort and print the candidates. It never replaces a working host binary.
+
+## Discovery tooling (planned)
+
+A GTK tool will wrap `strace`/`ptrace` to observe which paths an application touches, group them by XDG role, and suggest `DAT_TARGET`, `DAT_METHOD`, and `BIN_MODE`. It is an authoring tool, not part of the runner: ptrace permissions, Flatpak sandboxes, and filesystem noise make it unsuitable for launch-time decisions. The runner keeps explicit configuration plus detection.
 
 ## Flatpak profile
 
@@ -179,7 +192,13 @@ MyApp/
 └── MyApp.desktop
 ```
 
-The runner links the desktop file into `~/.local/share/applications`, rewrites `Exec=` to the runner, rewrites `Icon=` to the absolute portable path, and sets the folder icon through `gio` when available. Remove the files to opt out.
+Any image at the root, or in `ICON_SOURCE`, becomes the icon; MIME type decides, not the extension. `ICON_NAME` pins a specific file. The runner links the desktop file into `~/.local/share/applications`, rewrites `Exec=` to the runner, rewrites `Icon=` to the absolute portable path, and sets the folder icon through `gio` when available. Delete the image and the next run resets the folder icon and the desktop entry to the default. Remove the desktop file to opt out.
+
+## Non-app stacks
+
+The same folder can wrap a stack that is not a single binary. Immich is a Docker Compose project: the folder holds `docker-compose.yml`, `library/`, `postgres/`, and `run/`, and `app_run` starts it. Relative paths in the compose file mean moving the folder moves the data. One manager file remains the entry point; the helper scripts are part of the stack.
+
+The runner does not learn Docker. `app_install` and `app_run` are hooks for backends and stacks whose install or launch is not a package command.
 
 ## Safety
 
@@ -205,7 +224,11 @@ The target engine enforces these rules. The reference template implements an ear
 | Auto-detection of `bin` and `dat` | specified |
 | Package manager chain (`pkgcli` > `pkcon` > native) | partially implemented; search and `yay` fallback specified |
 | Flatpak profile (auto paths) | specified |
+| Snap, Nix, Homebrew, Toolpak, pkgit, cpak adapters | specified |
+| Icon auto-detect and reset | implemented |
+| Discovery GUI (`strace`/`ptrace`) | planned |
 | `.bak` before replacing host data | implemented |
+| `app_install` / `app_run` hooks, non-app stacks | specified |
 | `bind` method | deferred |
 | Rust engine | future |
 | Windows support | future, native binary only |
