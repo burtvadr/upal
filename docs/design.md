@@ -151,7 +151,7 @@ See [nautilus.md](nautilus.md) for the manifest, security rules, routes, and sou
 
 ## Portable archives
 
-A folder can be transported as a plain ZIP. The archive is not an APK, not an installer, and not signed; it is a snapshot. The runner remains the only manager. A future unpack helper rejects zip-slip and symlink escapes, preserves the executable bit, and never runs anything after extraction.
+A folder can be transported as a plain ZIP. The runner remains the only manager. A future unpack helper rejects zip-slip and symlink escapes, preserves the executable bit, and never runs anything after extraction.
 
 AppManager interoperability is a possible opt-in adapter, not a dependency. See [packaging.md](packaging.md).
 

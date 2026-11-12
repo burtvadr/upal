@@ -199,7 +199,7 @@ The runner does not learn Docker. `app_install` and `app_run` are hooks for back
 
 ## Packaging (future)
 
-A portable folder can be zipped into one file for transport. The archive is a plain ZIP, not an APK: no installer, no signing requirement, no auto-run. Unzip it, click the runner. AppManager interoperability is a possible opt-in integration, only if both projects are ready. See [packaging.md](docs/packaging.md).
+A portable folder can be zipped into one file for transport. Unzip it, click the runner. AppManager interoperability is a possible opt-in integration, only if both projects are ready. See [packaging.md](docs/packaging.md).
 
 ## Safety
 
