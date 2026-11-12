@@ -17,8 +17,10 @@ DESKTOP_FILE_NAME="scrcpy.desktop"
 DESKTOP_FILE_SOURCE="$PORTABLE_ROOT"
 DESKTOP_FILE_TARGET="$HOME/.local/share/applications"
 ICON_NAME="scrcpy.svg"
+ICON_ID="scrcpy"
 ICON_SOURCE="$PORTABLE_ROOT"
 ICON_TARGET=""
+ICON_METHOD="copy"
 ICON=""
 CACHE_SOURCE=""
 CACHE_TARGET=""
@@ -36,6 +38,28 @@ if [ -z "$ICON_NAME" ] && [ -d "$ICON_SOURCE" ]; then
 fi
 if [ -n "$ICON_NAME" ]; then
     ICON="$ICON_SOURCE/$ICON_NAME"
+    if [ -z "$ICON_ID" ]; then
+        ICON_ID=${ICON_NAME%.*}
+    fi
+    case "$ICON_ID" in
+        *.svg|*.png|*.xpm|*.jpg|*.jpeg) ICON_ID=${ICON_ID%.*} ;;
+    esac
+    _icon_ext=${ICON_NAME##*.}
+    case "$_icon_ext" in
+        svg|png|xpm|jpg|jpeg) ;;
+        *) _icon_ext=png ;;
+    esac
+    case "$(file -b --mime-type -- "$ICON" 2>/dev/null)" in
+        image/svg+xml) _icon_ext=svg ;;
+        image/png) _icon_ext=png ;;
+    esac
+    case "$_icon_ext" in
+        svg) _icon_dir="scalable/apps" ;;
+        *) _icon_dir="256x256/apps" ;;
+    esac
+    if [ -z "$ICON_TARGET" ]; then
+        ICON_TARGET="$HOME/.local/share/icons/hicolor/$_icon_dir"
+    fi
 fi
 
 # Check whether any target path is on a filesystem without POSIX permission support
@@ -103,15 +127,17 @@ elif command -v adb >/dev/null 2>&1; then
 fi
 
 # man linking
-for src in "$MAN"/*.1; do
-    [ -e "$src" ] || continue
+if [ -n "$MAN" ] && [ -d "$MAN" ]; then
+    for src in "$MAN"/*.1; do
+        [ -e "$src" ] || continue
 
-    dst="/usr/share/man/man1/$(basename "$src")"
+        dst="/usr/share/man/man1/$(basename "$src")"
 
-    if [ ! -e "$dst" ] || ! [ "$src" -ef "$dst" ]; then
-        sudo ln -sfn "$src" "$dst"
-    fi
-done
+        if [ ! -e "$dst" ] || ! [ "$src" -ef "$dst" ]; then
+            sudo ln -sfn "$src" "$dst"
+        fi
+    done
+fi
 
 # Link all .desktop files
 if [ -d "$DESKTOP_FILE_SOURCE" ]; then
@@ -125,7 +151,9 @@ fi
 
 # resolve desktop file icons
 if [ -n "$DESKTOP_FILE_NAME" ]; then
-    if [ -n "$ICON" ]; then
+    if [ -n "$ICON" ] && [ -e "$ICON" ] && [ -n "$ICON_ID" ] && [ "$ICON_METHOD" != "none" ]; then
+        _icon="$ICON_ID"
+    elif [ -n "$ICON" ] && [ -e "$ICON" ]; then
         _icon="$ICON"
     else
         _icon="${NAME:-$PKG}"
@@ -139,8 +167,20 @@ if [ -n "$DESKTOP_FILE_NAME" ]; then
 fi
 
 # sndcpy has its own icon
-if [ -e "$DESKTOP_FILE_SOURCE/sndcpy.desktop" ]; then
-    sed -i "s|^Icon=.*|Icon=$ICON_SOURCE/sndcpy.svg|" "$DESKTOP_FILE_SOURCE/sndcpy.desktop"
+if [ -e "$DESKTOP_FILE_SOURCE/sndcpy.desktop" ] && [ -e "$ICON_SOURCE/sndcpy.svg" ]; then
+    if [ "$ICON_METHOD" = "none" ]; then
+        _sndcpy_icon="$ICON_SOURCE/sndcpy.svg"
+    else
+        mkdir -p "$ICON_TARGET"
+        if [ "$ICON_METHOD" = "link" ]; then
+            ln -sfn "$ICON_SOURCE/sndcpy.svg" "$ICON_TARGET/sndcpy.svg"
+        else
+            rm -f "$ICON_TARGET/sndcpy.svg"
+            cp -f "$ICON_SOURCE/sndcpy.svg" "$ICON_TARGET/sndcpy.svg"
+        fi
+        _sndcpy_icon="sndcpy"
+    fi
+    sed -i "s|^Icon=.*|Icon=$_sndcpy_icon|" "$DESKTOP_FILE_SOURCE/sndcpy.desktop"
 fi
 
 # Defining BIN_TARGET
@@ -221,7 +261,11 @@ fi
 
 if [ -d "$BIN_TARGET" ]; then
     for link in "$BIN_TARGET"/*; do
-        [ -L "$link" ] && [ ! -e "$link" ] && rm -f "$link"
+        [ -L "$link" ] || continue
+        [ -e "$link" ] && continue
+        case "$(readlink "$link")" in
+            "$BIN_SOURCE"/*) rm -f "$link" ;;
+        esac
     done
 fi
 
@@ -253,6 +297,28 @@ elif [ -f "$BIN_SOURCE" ] || [ -L "$BIN_SOURCE" ]; then
     else
         # BIN_TARGET is a file path - link directly
         link_or_backup "$BIN_SOURCE" "$BIN_TARGET"
+    fi
+fi
+
+# Install the icon into the theme so desktop files can use Icon=<id>
+if [ -n "$ICON" ] && [ -e "$ICON" ] && [ -n "$ICON_ID" ] && [ "$ICON_METHOD" != "none" ]; then
+    mkdir -p "$ICON_TARGET"
+    if [ "$ICON_METHOD" = "link" ]; then
+        ln -sfn "$ICON" "$ICON_TARGET/$ICON_ID.$_icon_ext"
+    else
+        rm -f "$ICON_TARGET/$ICON_ID.$_icon_ext"
+        cp -f "$ICON" "$ICON_TARGET/$ICON_ID.$_icon_ext"
+    fi
+    if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+        gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" >/dev/null 2>&1
+    fi
+elif [ "$ICON_METHOD" != "none" ] && [ -n "$ICON_ID" ] && [ -n "$ICON_TARGET" ]; then
+    # Source icon was removed: drop the managed theme icon too
+    for _ext in svg png xpm jpg jpeg; do
+        rm -f "$ICON_TARGET/$ICON_ID.$_ext"
+    done
+    if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+        gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" >/dev/null 2>&1
     fi
 fi
 

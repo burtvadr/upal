@@ -17,7 +17,7 @@ Think of it as a mix of a macOS app bundle and a Windows portable app:
 - **Move it and go.** Another disk, another machine, a backup: the data stays with the app.
 - **Keep your package manager.** Flatpak, Snap, distro packages, Nix, Homebrew, and more.
 - **Works with non-apps too.** A Docker Compose stack like Immich can live in the same kind of folder.
-- **Looks like a real app.** Add an image and a desktop entry; it gets an icon and a launcher.
+- **Looks like a real app.** Add an image and a desktop entry; the icon goes into your theme, so it keeps working when the folder moves.
 - **No lock-in.** Your data stays as ordinary files.
 
 ## Data first, binaries disposable
@@ -191,7 +191,7 @@ MyApp/
 └── MyApp.desktop
 ```
 
-Any image at the root, or in `ICON_SOURCE`, becomes the icon; MIME type decides, not the extension. `ICON_NAME` pins a specific file. The runner links the desktop file into `~/.local/share/applications`, rewrites `Exec=` to the runner, rewrites `Icon=` to the absolute portable path, and sets the folder icon through `gio` when available. Delete the image and the next run resets the folder icon and the desktop entry to the default. Remove the desktop file to opt out.
+Any image at the root, or in `ICON_SOURCE`, becomes the icon; MIME type decides, not the extension. `ICON_NAME` pins a specific file. The runner links the desktop file into `~/.local/share/applications`, rewrites `Exec=` to the runner, installs the icon into the hicolor theme, and sets `Icon=<id>` so the desktop entry survives moving the folder. `ICON_ID` defaults to the icon filename without its extension; set a reverse-DNS name to avoid collisions. `ICON_METHOD` chooses `copy` (default), `link`, or `none`. The runner also sets the folder icon through `gio`. Delete the image and the next run removes the theme icon, resets the folder icon, and falls back the desktop entry to the default. Remove the desktop file to opt out.
 
 ## Nautilus bundles (planned)
 
@@ -233,7 +233,7 @@ The target engine enforces these rules. The reference template implements an ear
 | Package manager chain (`pkgcli` > `pkcon` > native) | partially implemented; search and `yay` fallback specified |
 | Flatpak profile (auto paths) | specified |
 | Snap, Nix, Homebrew, Toolpak, pkgit, cpak adapters | specified |
-| Icon auto-detect and reset | implemented |
+| Icon auto-detect, theme install, and reset | implemented |
 | Discovery GUI (`strace`/`ptrace`) | planned |
 | Nautilus directory activation (opt-in bundles) | planned |
 | Portable ZIP archive and AppManager interoperability | idea |

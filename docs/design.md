@@ -115,9 +115,11 @@ The runner does not learn Docker. `app_run` starts the stack and opens the brows
 
 ## Icons
 
-Any image in the portable root, or in `ICON_SOURCE`, becomes the desktop and folder icon; MIME type decides, not the extension. `ICON_NAME` pins one file.
+Any image in the portable root, or in `ICON_SOURCE`, becomes the icon; MIME type decides, not the extension. `ICON_NAME` pins one file.
 
-The icon is not copied into a theme by default. The desktop entry points at the absolute path, and `gio` sets `metadata::custom-icon` on the folder and on the data target. Deleting the image is the reset: the next run unsets the folder metadata and falls back to the package or application name in the desktop entry. No state file records the previous icon, so the folder can be moved without breaking the reset.
+The icon is installed into the hicolor theme under `ICON_ID` (default: the source filename without its extension), and the desktop entry uses `Icon=<id>`. This is the difference between a portable folder and a path-bound launcher: moving the folder leaves the desktop icon working. `ICON_METHOD="copy"` is the default and survives the move. `link` is smaller but breaks on move; the next run repairs it. `none` keeps the absolute path.
+
+`gio` still sets the folder icon from the portable file. Deleting the image removes the managed theme icon, unsets the folder metadata, and falls back the desktop entry to the package or application name.
 
 ## Nautilus application bundles
 

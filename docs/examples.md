@@ -66,6 +66,7 @@ DAT_METHOD="link"
 BIN_MODE="auto"
 DESKTOP_FILE_NAME="gimp.desktop"
 ICON_NAME="gimp.svg"
+ICON_ID="org.gimp.GIMP"
 NAME="GIMP"
 ```
 
@@ -74,7 +75,7 @@ First run:
 - installs `gimp` if missing;
 - moves existing `~/.config/GIMP` into `dat/`, then links it back;
 - links `gimp.desktop` into `~/.local/share/applications`;
-- rewrites `Exec=` to the runner and `Icon=` to the portable icon;
+- rewrites `Exec=` to the runner, installs the icon into the hicolor theme, and sets `Icon=org.gimp.GIMP`;
 - runs `gimp`.
 
 Because there is no `bin/`, `BIN_MODE="auto"` selects host mode: no sudo and no binary links.
@@ -211,7 +212,8 @@ app_pre_link() {
 }
 
 app_post_link() {
-    sed -i "s|^Icon=.*|Icon=$ICON_SOURCE/sndcpy.svg|" \
+    cp "$ICON_SOURCE/sndcpy.svg" "$ICON_TARGET/sndcpy.svg"
+    sed -i "s|^Icon=.*|Icon=sndcpy|" \
         "$DESKTOP_FILE_SOURCE/sndcpy.desktop"
 }
 ```

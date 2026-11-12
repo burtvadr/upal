@@ -34,8 +34,10 @@ DESKTOP_FILE_TARGET="$HOME/.local/share/applications"
 DESKTOP_FILE_NAME=""
 DESKTOP_INTEGRATION="yes"
 ICON_SOURCE="$PORTABLE_ROOT"
-ICON_TARGET=""
 ICON_NAME=""
+ICON_ID=""
+ICON_TARGET=""
+ICON_METHOD="copy"
 NAME="$PKG"
 CACHE_SOURCE=""
 CACHE_TARGET=""
@@ -67,8 +69,10 @@ KILL_TERMINAL="yes"
 | `DESKTOP_FILE_NAME` | `""` | Optional filter. Empty means all `*.desktop` files in the source. |
 | `DESKTOP_INTEGRATION` | `yes` | Link and rewrite desktop files. |
 | `ICON_SOURCE` | `$PORTABLE_ROOT` | Where to find the icon. |
-| `ICON_TARGET` | `""` | Optional install path. Empty means the desktop file uses the absolute portable path. |
 | `ICON_NAME` | `""` | Icon filename. Empty means the first image found in `ICON_SOURCE`. |
+| `ICON_ID` | derived | Theme icon name, without extension. Empty means the `ICON_NAME` basename without its extension. |
+| `ICON_TARGET` | derived | Theme directory. Empty means `~/.local/share/icons/hicolor/scalable/apps` for SVG, `256x256/apps` otherwise. |
+| `ICON_METHOD` | `copy` | `copy`, `link`, or `none`. |
 | `NAME` | `$PKG` | Display name. |
 | `CACHE_SOURCE` | `""` | Portable cache directory. Off by default. |
 | `CACHE_TARGET` | `""` | Host cache path. |
@@ -333,7 +337,8 @@ app_pre_link() {
 }
 
 app_post_link() {
-    sed -i "s|^Icon=.*|Icon=$ICON_SOURCE/sndcpy.svg|" \
+    cp "$ICON_SOURCE/sndcpy.svg" "$ICON_TARGET/sndcpy.svg"
+    sed -i "s|^Icon=.*|Icon=sndcpy|" \
         "$DESKTOP_FILE_SOURCE/sndcpy.desktop"
 }
 ```
@@ -360,11 +365,15 @@ app_run() {
 
 ## Icons
 
-Any image at the portable root, or in `ICON_SOURCE`, is a candidate. The first one becomes the desktop and folder icon; `ICON_NAME` pins a specific file. Detection uses the MIME type, not the extension, so a PNG named `icon.svg` still works.
+Any image at the portable root, or in `ICON_SOURCE`, is a candidate. The first one becomes the icon; `ICON_NAME` pins a specific file. Detection uses the MIME type, not the extension, so a PNG named `icon.svg` still works.
 
-- `ICON_TARGET` optionally installs the image into an icon theme directory. Empty means the desktop entry points at the absolute portable path.
-- `gio` sets `metadata::custom-icon` on the portable root and on `DAT_TARGET`.
-- Deleting the image resets both: the folder icon is unset with `gio set -t unset`, and the desktop `Icon=` falls back to the package or application name. The next run restores the image icon if a new image appears.
+The runner installs the icon into the hicolor theme at `~/.local/share/icons/hicolor/scalable/apps/<id>.svg` (or `256x256/apps/<id>.png`) and sets `Icon=<id>` in the desktop entry. Moving the folder does not break the entry.
+
+- `ICON_ID` is the theme name. Empty means the source filename without its extension; set a reverse-DNS name such as `com.app.developer` to avoid collisions.
+- `ICON_TARGET` overrides the theme directory.
+- `ICON_METHOD` is `copy` (default), `link`, or `none`. `copy` survives moving the folder. `link` updates with the source but breaks when the folder moves; the next run repairs it. `none` leaves the desktop entry on the absolute portable path.
+- `gio` sets `metadata::custom-icon` on the portable root and on `DAT_TARGET` from the portable file.
+- Deleting the image removes the managed theme icon, unsets the folder metadata with `gio set -t unset`, and falls back the desktop `Icon=` to the package or application name. The next run restores the icon if a new image appears.
 
 ## Environment
 
