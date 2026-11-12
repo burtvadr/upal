@@ -38,6 +38,8 @@ The irreplaceable part is user data: profiles, saves, plugins, configuration, st
 
 A locally compiled application fits the same model: put the binary in `bin/`, set `BIN_MODE="copy"`, and keep the data mapping.
 
+Portable data is independent of the binary. The same folder can point at a distro package, a Flatpak, or a locally built binary. UPAL does not convert data between application versions or distributions: moving an Arch profile to an older Debian build is the user's decision. `BACKUP="yes"` (default) keeps the previous host data as `<path>.bak` before linking, so there is a rollback.
+
 The layout:
 
 ```text
@@ -100,6 +102,30 @@ Detection never deletes a real file. Ambiguous layouts abort and print the candi
 
 The runner checks `BIN_NAMES` first. If a command is missing, it installs `PKG`. If `PKG` is empty or the package name is unknown, it searches the backend and installs an exact match; several matches abort and print the candidates. It never replaces a working host binary.
 
+## Flatpak profile
+
+Flatpak is the cleanest case because the paths are standardized. `PACKAGE_MANAGER="flatpak"` is a profile: it fills the paths from `FLATPAK_ID`, so there are no directories to configure.
+
+| What | User install | System install |
+|---|---|---|
+| binaries | `~/.local/share/flatpak/app/$FLATPAK_ID` | `/var/lib/flatpak/app/$FLATPAK_ID` |
+| data | `~/.var/app/$FLATPAK_ID` | `~/.var/app/$FLATPAK_ID` |
+
+```sh
+PACKAGE_MANAGER="flatpak"
+FLATPAK_ID="com.developer.App"
+```
+
+The runner derives:
+
+- `DAT_SOURCE="$PORTABLE_ROOT/dat"`;
+- `DAT_TARGET="$HOME/.var/app/$FLATPAK_ID"`;
+- install via `flatpak install`;
+- run via `flatpak run "$FLATPAK_ID"`, with no binary links;
+- desktop entry and icon from the Flatpak export, when present.
+
+User and system installs differ only in where the binaries live; the data path is always `~/.var/app/$FLATPAK_ID`. Some applications write outside the sandbox data directory: Heroic creates `~/Games`. Add it explicitly if you want it portable; it is not automatic.
+
 ## Methods
 
 Everything is one primitive:
@@ -159,7 +185,7 @@ The runner links the desktop file into `~/.local/share/applications`, rewrites `
 
 The target engine enforces these rules. The reference template implements an earlier subset and does not yet meet all of them.
 
-- Existing host data is moved into the portable folder on first link; a real conflict is rotated to `.1`, `.2`, and so on, never overwritten.
+- Existing host data is moved into the portable folder on first link; a real conflict is backed up as `.bak`, `.bak.1`, `.bak.2`, never overwritten. Backup is on by default (`BACKUP="yes"`).
 - A real file or directory is never replaced by a symlink unless the backup succeeds. Root-owned targets use `sudo` for the backup too.
 - Cleanup only touches links whose name and target belong to this runner. No broad `rm "$BIN_TARGET"/*`.
 - Every run is idempotent.
@@ -178,6 +204,8 @@ The target engine enforces these rules. The reference template implements an ear
 | `env` and `link-out` data methods | specified |
 | Auto-detection of `bin` and `dat` | specified |
 | Package manager chain (`pkgcli` > `pkcon` > native) | partially implemented; search and `yay` fallback specified |
+| Flatpak profile (auto paths) | specified |
+| `.bak` before replacing host data | implemented |
 | `bind` method | deferred |
 | Rust engine | future |
 | Windows support | future, native binary only |
@@ -195,6 +223,7 @@ The reference implementation is `posix_variables`. The full target contract is i
 
 - macOS `.app` bundles. They are metadata-driven and conflict with the no-metadata rule; the current engine is POSIX/Linux.
 - Windows registry emulation. Windows support means a native binary that understands `%APPDATA%` and `%LOCALAPPDATA%`.
+- Data conversion between application versions or distributions. The user owns that decision; UPAL backs up.
 - A config file or a daemon. The runner is the config.
 - Bundling every library. Host-provided binaries are the default; the folder owns data and identity.
 

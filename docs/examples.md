@@ -118,6 +118,36 @@ DAT_TARGET="$HOME/.mozilla/firefox"
 DAT_METHOD="link"
 ```
 
+## Flatpak: only the app ID
+
+Flatpak paths are standardized, so the profile fills them.
+
+```text
+Heroic/
+├── runner
+└── dat/
+```
+
+```sh
+PACKAGE_MANAGER="flatpak"
+FLATPAK_ID="com.heroicgameslauncher.hgl"
+DAT_SOURCE="$PORTABLE_ROOT/dat"
+DAT_TARGET="$HOME/.var/app/$FLATPAK_ID"
+DAT_METHOD="link"
+BIN_MODE="auto"
+NAME="Heroic"
+```
+
+`DAT_SOURCE` and `DAT_TARGET` can be omitted; the profile derives them from `FLATPAK_ID`. The runner installs with `flatpak install`, runs with `flatpak run`, and does not link the Flatpak binary. The data path is `~/.var/app/$FLATPAK_ID` for both user and system installs.
+
+Heroic also writes games to `~/Games`. Add it explicitly:
+
+```sh
+app_pre_link() {
+    redirect "$PORTABLE_ROOT/games" "$HOME/Games" link
+}
+```
+
 ## adb: portable binaries and data
 
 The folder carries the Android tools; the host gets links.

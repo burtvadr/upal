@@ -10,6 +10,7 @@ PKG=""
 NAME="$PKG"
 DAT_SOURCE="$PORTABLE_ROOT/dat"
 DAT_TARGET="" 
+BACKUP="yes"
 BIN_SOURCE="$PORTABLE_ROOT/bin"
 BIN_TARGET=""
 DESKTOP_FILE_NAME=""
@@ -133,7 +134,7 @@ fi
 }
 
 # link_or_backup <source> <target>
-# Symlink target -> source. Backs up anything that would be overwritten.
+# Symlink target -> source. Backs up anything that would be overwritten as .bak.
 # If target is a symlink resolving to the same inode as source, it's left as-is.
 # If source is a broken symlink, any broken symlink at target is removed.
 link_or_backup() {
@@ -169,9 +170,14 @@ link_or_backup() {
     fi
 
     # Target exists (directory, file, or symlink pointing elsewhere) - back up and link
+    [ "${BACKUP:-yes}" = "yes" ] || return 1
+    _bak="${_tgt}.bak"
     _i=1
-    while [ -e "${_tgt}${_i}" ] || [ -L "${_tgt}${_i}" ]; do _i=$((_i+1)); done
-    mv "$_tgt" "${_tgt}${_i}"
+    while [ -e "$_bak" ] || [ -L "$_bak" ]; do
+        _bak="${_tgt}.bak.${_i}"
+        _i=$((_i+1))
+    done
+    mv "$_tgt" "$_bak" 2>/dev/null || sudo mv "$_tgt" "$_bak" || return 1
     ln -sfn "$_src" "$_tgt" || sudo ln -sfn "$_src" "$_tgt"
     return 0
 }

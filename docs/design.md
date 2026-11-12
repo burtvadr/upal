@@ -51,6 +51,10 @@ UPAL is a portable data layer, not a portable binary format. The irreplaceable p
 
 This is why the data mapping is the center of the contract and the binary mode is secondary. A user can change `BIN_MODE` without touching the data; changing the data mapping is the decision that matters.
 
+## Data reuse and version compatibility
+
+Portable data is independent of the binary. The same folder can point at a distro package, a Flatpak, or a locally built binary. UPAL does not convert data between application versions or distributions; that is the user's decision. The safety net is a backup: `BACKUP="yes"` keeps the previous host data as `<path>.bak` before linking. Disable it only when you have your own backup.
+
 ## Data is per application
 
 There is no global definition of valuable user data. A browser profile, a game save, a cache directory, and a plugin directory are all different decisions. The wrapper cannot know which ones matter.
@@ -76,6 +80,14 @@ pkgcli > pkcon > native (apt, dnf, pacman/yay, zypper)
 `auto` is the default and `native` is an alias. `distro` forces the distro manager only. `flatpak` uses `FLATPAK_ID`. `none` disables installation.
 
 The runner checks commands first, installs packages only when needed, and searches only when the package name is unknown. Ambiguous search results abort. A working host binary is never replaced.
+
+## Flatpak profile
+
+Flatpak is the ideal case: the paths are standardized, so the runner only needs `FLATPAK_ID`. `PACKAGE_MANAGER="flatpak"` derives the data path (`~/.var/app/$FLATPAK_ID`), installs with `flatpak install`, and runs with `flatpak run`.
+
+The binary location is irrelevant to the runner because it never links the Flatpak binary. User installs live in `~/.local/share/flatpak/app/$FLATPAK_ID`; system installs live in `/var/lib/flatpak/app/$FLATPAK_ID`. The data path is the same for both.
+
+Applications that write outside the sandbox data directory, such as Heroic with `~/Games`, need an explicit extra mapping in a hook. The standard path is automatic; the exception is opt-in.
 
 ## POSIX first
 
@@ -117,6 +129,7 @@ It is the last resort for applications that replace symlinks. Document it, imple
 
 - macOS `.app` bundles.
 - Windows registry emulation.
+- Data conversion between application versions or distributions. UPAL backs up; it does not migrate.
 - A config file or a daemon.
 - Bundling every library.
 - A GUI.

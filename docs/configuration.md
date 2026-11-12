@@ -25,6 +25,7 @@ DAT_SOURCE=""
 DAT_TARGET=""
 DAT_METHOD="link"
 DAT_ENV="XDG_CONFIG_HOME"
+BACKUP="yes"
 BIN_MODE="auto"
 BIN_SOURCE=""
 BIN_TARGET=""
@@ -51,12 +52,13 @@ KILL_TERMINAL="yes"
 |---|---|---|
 | `PKG` | `""` | Package or packages to install, space-separated. Empty means search for `BIN_NAMES`, or use the runner filename. |
 | `PACKAGE_MANAGER` | `auto` | `auto`/`native` (PackageKit chain), `distro` (native only), `flatpak`, or `none`. |
-| `FLATPAK_ID` | `""` | Flatpak application ID, when the package is a Flatpak. |
+| `FLATPAK_ID` | `""` | Flatpak application ID. Required by the Flatpak profile; the data path is derived. |
 | `BIN_NAMES` | `""` | Commands to check, link, and run. Empty means the words in `PKG`, or the runner filename. |
 | `DAT_SOURCE` | `""` | Portable data directory. Empty means detect; if `DAT_TARGET` is set, defaults to `$PORTABLE_ROOT/dat`. |
 | `DAT_TARGET` | `""` | Host data path. Empty means XDG mapping when the data directory is XDG-shaped, otherwise no redirection. |
 | `DAT_METHOD` | `link` | `link`, `link-out`, `env`, `bind`, or `none`. |
 | `DAT_ENV` | `XDG_CONFIG_HOME` | Variable exported for the `env` method. |
+| `BACKUP` | `yes` | Before replacing an existing host path, keep it as `<path>.bak`, then `.bak.1`, `.bak.2`. `no` aborts on conflict. |
 | `BIN_MODE` | `auto` | `auto`, `in`, `out`, or `copy`. |
 | `BIN_SOURCE` | `""` | Portable binary directory or single file. Empty means detect. |
 | `BIN_TARGET` | `""` | Host `PATH` directory or single file. Used by `out` only. Empty means the first writable `PATH` directory. |
@@ -73,6 +75,12 @@ KILL_TERMINAL="yes"
 | `CACHE_METHOD` | `link` | Same methods as `DAT_METHOD`. |
 | `MAN` | `$BIN_SOURCE` | Directory containing `*.1` man pages. Empty disables man linking. |
 | `KILL_TERMINAL` | `yes` | Close the terminal that launched the runner after the app starts. |
+
+## Data reuse and version compatibility
+
+Portable data is independent of the binary. The same folder can point at a distro package, a Flatpak, or a locally built binary.
+
+UPAL does not convert data between application versions or distributions. A profile written by a newer Arch package may not load in an older Debian package; that is the user's decision. The safety net is `BACKUP="yes"`: before a host path is replaced, the existing data is kept as `<path>.bak`. Disable it only when you have your own backup.
 
 ## Methods
 
@@ -97,6 +105,8 @@ DAT_METHOD="link"
 ```
 
 This is the default. It works for any application that accepts a symlinked directory. Some applications replace the symlink or resolve it to a real path; use `env` or `bind` for those.
+
+If the host path already exists, it is backed up as `<path>.bak` before the link. Further conflicts use `.bak.1`, `.bak.2`, and so on. `BACKUP="no"` aborts instead of overwriting.
 
 ### `link-out`
 
@@ -231,6 +241,31 @@ Search commands used by the native fallback: `apt-cache search`, `dnf search`, `
 
 Packages are installed one per word, so `PKG="adb fastboot heimdall scrcpy"` loops over four packages. `BIN_NAMES` is separate because a package name and a command name often differ.
 
+## Flatpak profile
+
+`PACKAGE_MANAGER="flatpak"` is a profile: only `FLATPAK_ID` is required. The engine fills the standardized paths.
+
+| Path | User install | System install |
+|---|---|---|
+| binaries | `~/.local/share/flatpak/app/$FLATPAK_ID` | `/var/lib/flatpak/app/$FLATPAK_ID` |
+| data | `~/.var/app/$FLATPAK_ID` | `~/.var/app/$FLATPAK_ID` |
+| desktop export | `~/.local/share/flatpak/exports/share/applications/$FLATPAK_ID.desktop` | `/var/lib/flatpak/exports/share/applications/$FLATPAK_ID.desktop` |
+
+Derived values:
+
+- `DAT_SOURCE="$PORTABLE_ROOT/dat"` if empty.
+- `DAT_TARGET="$HOME/.var/app/$FLATPAK_ID"` if empty.
+- `BIN_MODE` is host: no binary links; run with `flatpak run "$FLATPAK_ID"`.
+- `PKG` is not used; install with `flatpak install`.
+- Desktop entry and icon come from the Flatpak export when present.
+
+```sh
+PACKAGE_MANAGER="flatpak"
+FLATPAK_ID="com.developer.App"
+```
+
+The data path is the same for user and system installs. Some applications write outside `~/.var/app/$FLATPAK_ID`; add those paths explicitly with the `redirect` helper in a hook. Heroic's `~/Games` is the common example.
+
 ## Detection
 
 Precedence:
@@ -261,6 +296,7 @@ app_env() {
 
 app_pre_link() {
     adb kill-server
+    redirect "$PORTABLE_ROOT/games" "$HOME/Games" link
 }
 
 app_post_link() {
@@ -272,6 +308,7 @@ app_post_link() {
 - `app_env` runs before the application starts.
 - `app_pre_link` runs before symlinks are changed.
 - `app_post_link` runs after desktop and icon integration.
+- `redirect <portable> <host> <method>` is available to hooks for extra paths, such as Heroic's `~/Games`. The header stays one mapping per role; the hook handles the exceptions.
 
 ## Environment
 
@@ -286,7 +323,7 @@ Environment variables are used instead of CLI flags so application arguments fro
 
 1. Never replace a real file or directory without a successful backup. Back up with `sudo` when the target is root-owned; abort if the backup fails.
 2. Only touch links whose name is managed and whose target belongs to this runner. No broad globs.
-3. Rotate conflicts to `.1`, `.2`, and so on; never overwrite.
+3. Back up conflicts as `.bak`, `.bak.1`, `.bak.2`, and so on; never overwrite. `BACKUP="yes"` is the default.
 4. Every run is idempotent.
 5. Switching modes never deletes real binaries. `out` → `in` aborts if real files occupy the link paths.
 6. The filesystem check runs once on `$PORTABLE_ROOT` and exits cleanly. NTFS, exFAT, and similar filesystems are refused.
