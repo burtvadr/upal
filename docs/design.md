@@ -77,21 +77,27 @@ This is why the configuration stays per runner instead of becoming a system-wide
 
 Missing binaries are resolved through a backend, not bundled by default. `PACKAGE_MANAGER` selects it:
 
-| Backend | Install | Run |
-|---|---|---|
-| `auto` / `native` | `pkgcli` > `pkcon` > `apt`/`dnf`/`pacman`+`yay`/`zypper` | command on `PATH` |
-| `distro` | native package manager only | command on `PATH` |
-| `flatpak` | `flatpak install` | `flatpak run "$FLATPAK_ID"` |
-| `snap` | `snap install` | `snap run "$PKG"` |
-| `nix` | `nix profile install` | `nix run` |
-| `brew` | `brew install` | command on `PATH` |
-| `toolpak`, `pkgit` | adapter-defined | adapter-defined |
-| `cpak` | `cpak install <source>` | `cpak run <pkg>` |
-| `none` | never | command on `PATH` |
+| Backend | Install | Run | Root |
+|---|---|---|---|
+| `auto` / `native` | `pkgcli` > `pkcon` > `apt`/`dnf`/`pacman`+`yay`/`zypper` | command on `PATH` | yes* |
+| `distro` | native package manager only | command on `PATH` | yes |
+| `flatpak` | `flatpak install` | `flatpak run "$FLATPAK_ID"` | no (user) |
+| `snap` | `snap install` | `snap run "$PKG"` | yes |
+| `nix` | `nix profile install` | `nix run` | no |
+| `brew` | `brew install` | command on `PATH` | no |
+| `toolpak`, `pkgit` | adapter-defined | adapter-defined | adapter-defined |
+| `cpak` | `cpak install <source>` | `cpak run <pkg>` | adapter-defined |
+| `none` | never | command on `PATH` | no |
+
+\* `pkgcli` and `pkcon` may authenticate through polkit; the native package managers need root.
 
 `auto` is the default and `native` is an alias. `distro` forces the distro manager only. The runner checks commands first, installs packages only when needed, and searches only when the package name is unknown. Ambiguous search results abort. A working host binary is never replaced.
 
 A backend is an adapter, not an abstraction over a shared package API: each one owns its install and run commands. When the backend has no usable CLI, `app_install` and `app_run` take over. This is also how non-app stacks fit without adding a new engine.
+
+## Privileges
+
+The runner never invokes `sudo`. It runs as the user and stops when a step needs root: a system package install, a man-page link, or a link into a system directory. The message names the step and asks for a rerun with the available escalator (`sudo` or `doas`). Flatpak user installs and user-local links never need root. When the runner is elevated, `SUDO_USER`/`DOAS_USER` keep `HOME` pointed at the invoking user and created files are handed back to that user.
 
 ## Discovery tooling
 

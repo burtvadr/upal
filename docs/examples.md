@@ -78,7 +78,7 @@ First run:
 - rewrites `Exec=` to the runner, installs the icon into the hicolor theme, and sets `Icon=org.gimp.GIMP`;
 - runs `gimp`.
 
-Because there is no `bin/`, `BIN_MODE="auto"` selects host mode: no sudo and no binary links.
+Because there is no `bin/`, `BIN_MODE="auto"` selects host mode: no root and no binary links.
 
 ## Firefox: XDG environment override
 
@@ -220,6 +220,8 @@ app_post_link() {
 
 `BIN_TARGET=""` means the first writable `PATH` directory, usually `~/.local/bin`. The runner links each executable there and backs up anything it replaces. Support files (`lib64`, `scrcpy-server`, the notices) stay in `bin/` next to the executables; only executable files are linked.
 
+Man-page linking writes to `/usr/share/man`, so the first run stops and asks for a rerun with sudo. Set `MAN=""` if you do not want that.
+
 The `app_pre_link` hook stops a running adb server before the data link changes. The `app_post_link` hook gives `sndcpy.desktop` its own icon.
 
 If you prefer distro packages, drop `bin/`, set `BIN_MODE="auto"`, and keep the same `dat/` mapping. The data does not change with the binary source.
@@ -290,7 +292,7 @@ NAME="MyApp"
 
 `copy` mode runs the binary from the folder and leaves the host `PATH` alone. Data still links back to the folder. This is the closest to a classic Windows portable folder.
 
-## Host-owned binaries: no sudo, updates flow through
+## Host-owned binaries: no root, updates flow through
 
 ```sh
 PKG="gimp"

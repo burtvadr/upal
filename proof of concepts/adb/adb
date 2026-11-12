@@ -4,6 +4,29 @@
 # Directory where this script lives
 PORTABLE_ROOT=$(cd -P -- "$(dirname -- "$0")" && command pwd -P)
 
+# Keep user paths and ownership when run through sudo, doas, or another escalator
+ORIG_USER=${SUDO_USER:-${DOAS_USER:-}}
+ORIG_UID=${SUDO_UID:-${DOAS_UID:-}}
+ORIG_GID=${SUDO_GID:-${DOAS_GID:-}}
+if [ "$(id -u)" -eq 0 ] && [ -n "$ORIG_USER" ] && [ "$ORIG_USER" != "root" ]; then
+    ORIG_HOME=$(getent passwd "$ORIG_USER" 2>/dev/null | cut -d: -f6)
+    [ -n "$ORIG_HOME" ] || ORIG_HOME=$(awk -F: -v u="$ORIG_USER" '$1 == u { print $6; exit }' /etc/passwd)
+    [ -n "$ORIG_HOME" ] && HOME="$ORIG_HOME"
+fi
+if [ -z "$ORIG_UID" ] && [ -n "$ORIG_USER" ]; then
+    ORIG_UID=$(id -u "$ORIG_USER" 2>/dev/null)
+    ORIG_GID=$(id -g "$ORIG_USER" 2>/dev/null)
+fi
+
+# Suggest an escalator without invoking it
+if command -v sudo >/dev/null 2>&1; then
+    ESCALATOR=sudo
+elif command -v doas >/dev/null 2>&1; then
+    ESCALATOR=doas
+else
+    ESCALATOR=""
+fi
+
 # Variables
 PACKAGE_MANAGER="none"
 PKG=""
@@ -26,6 +49,37 @@ CACHE_SOURCE=""
 CACHE_TARGET=""
 MAN="$BIN_SOURCE"
 KILL_TERMINAL="yes"
+
+# Fail instead of calling sudo
+need_root() {
+    if [ "$(id -u)" -eq 0 ]; then
+        printf '%s\n' "Failed: $*" >&2
+    else
+        printf '%s\n' "This needs root: $*" >&2
+        printf '%s\n' "Re-run as root: ${ESCALATOR:+$ESCALATOR }$0" >&2
+    fi
+    exit 1
+}
+
+# Keep files under the invoking user's home owned by that user
+own() {
+    [ "$(id -u)" -eq 0 ] && [ -n "$ORIG_UID" ] && [ -n "$ORIG_GID" ] || return 0
+    case "$1" in
+        "$HOME"/*) chown -h "$ORIG_UID:$ORIG_GID" "$1" 2>/dev/null || true ;;
+    esac
+}
+
+# sed -i that keeps the original owner (useful when run with sudo)
+sed_in_place() {
+    _file=$1
+    shift
+    _uid=$(stat -c %u -- "$_file" 2>/dev/null)
+    _gid=$(stat -c %g -- "$_file" 2>/dev/null)
+    sed -i "$@" "$_file" || need_root "edit $_file"
+    if [ "$(id -u)" -eq 0 ] && [ -n "$_uid" ] && [ -n "$_gid" ]; then
+        chown "$_uid:$_gid" -- "$_file" 2>/dev/null
+    fi
+}
 
 # First image in ICON_SOURCE becomes the icon; ICON_NAME pins one
 if [ -z "$ICON_NAME" ] && [ -d "$ICON_SOURCE" ]; then
@@ -100,52 +154,35 @@ if [ -n "$PKG" ]; then
     elif { [ "$PACKAGE_MANAGER" = "auto" ] || [ "$PACKAGE_MANAGER" = "native" ]; } && command -v pkcon >/dev/null 2>&1; then
         pkcon install "$PKG"
     elif [ "$PACKAGE_MANAGER" = "auto" ] || [ "$PACKAGE_MANAGER" = "native" ] || [ "$PACKAGE_MANAGER" = "distro" ]; then
+        need_root "install packages with the system package manager"
         . /etc/os-release
         case "$ID" in
             ubuntu|debian)
-                sudo apt-get update
-                sudo apt-get install -y "$PKG"
+                apt-get update
+                apt-get install -y "$PKG"
                 ;;
             fedora)
-                sudo dnf install -y "$PKG" --skip-unavailable
+                dnf install -y "$PKG" --skip-unavailable
                 ;;
             arch)
-                sudo pacman -S "$PKG"
+                pacman -S "$PKG"
                 ;;
             opensuse*)
-                sudo zypper install -y "$PKG"
+                zypper install -y "$PKG"
                 ;;
         esac
     fi
 fi
 
-# Stop the adb server before its data directory changes
-if [ -x "$BIN_SOURCE/adb" ]; then
-    "$BIN_SOURCE/adb" kill-server >/dev/null 2>&1
-elif command -v adb >/dev/null 2>&1; then
-    adb kill-server >/dev/null 2>&1
-fi
-
-# man linking
-if [ -n "$MAN" ] && [ -d "$MAN" ]; then
-    for src in "$MAN"/*.1; do
-        [ -e "$src" ] || continue
-
-        dst="/usr/share/man/man1/$(basename "$src")"
-
-        if [ ! -e "$dst" ] || ! [ "$src" -ef "$dst" ]; then
-            sudo ln -sfn "$src" "$dst"
-        fi
-    done
-fi
-
 # Link all .desktop files
 if [ -d "$DESKTOP_FILE_SOURCE" ]; then
-    mkdir -p "$DESKTOP_FILE_TARGET"
+    mkdir -p "$DESKTOP_FILE_TARGET" || need_root "create $DESKTOP_FILE_TARGET"
+    own_path "$DESKTOP_FILE_TARGET"
 
     for file in "$DESKTOP_FILE_SOURCE"/*.desktop; do
         [ -e "$file" ] || continue
-        ln -sfn "$file" "$DESKTOP_FILE_TARGET"
+        ln -sfn "$file" "$DESKTOP_FILE_TARGET" || need_root "link $file"
+        own "$DESKTOP_FILE_TARGET/$(basename "$file")"
     done
 fi
 
@@ -161,7 +198,7 @@ if [ -n "$DESKTOP_FILE_NAME" ]; then
     for file in "$DESKTOP_FILE_SOURCE"/"$DESKTOP_FILE_NAME"; do
         [ -e "$file" ] || continue
         if [ -n "$_icon" ]; then
-            sed -i "s|^Icon=.*|Icon=$_icon|" "$file"
+            sed_in_place "$file" "s|^Icon=.*|Icon=$_icon|"
         fi
     done
 fi
@@ -171,16 +208,18 @@ if [ -e "$DESKTOP_FILE_SOURCE/sndcpy.desktop" ] && [ -e "$ICON_SOURCE/sndcpy.svg
     if [ "$ICON_METHOD" = "none" ]; then
         _sndcpy_icon="$ICON_SOURCE/sndcpy.svg"
     else
-        mkdir -p "$ICON_TARGET"
+        mkdir -p "$ICON_TARGET" || need_root "create $ICON_TARGET"
+        own_path "$ICON_TARGET"
         if [ "$ICON_METHOD" = "link" ]; then
-            ln -sfn "$ICON_SOURCE/sndcpy.svg" "$ICON_TARGET/sndcpy.svg"
+            ln -sfn "$ICON_SOURCE/sndcpy.svg" "$ICON_TARGET/sndcpy.svg" || need_root "link $ICON_TARGET/sndcpy.svg"
         else
-            rm -f "$ICON_TARGET/sndcpy.svg"
-            cp -f "$ICON_SOURCE/sndcpy.svg" "$ICON_TARGET/sndcpy.svg"
+            rm -f "$ICON_TARGET/sndcpy.svg" || need_root "replace $ICON_TARGET/sndcpy.svg"
+            cp -f "$ICON_SOURCE/sndcpy.svg" "$ICON_TARGET/sndcpy.svg" || need_root "copy sndcpy.svg to $ICON_TARGET"
         fi
+        own "$ICON_TARGET/sndcpy.svg"
         _sndcpy_icon="sndcpy"
     fi
-    sed -i "s|^Icon=.*|Icon=$_sndcpy_icon|" "$DESKTOP_FILE_SOURCE/sndcpy.desktop"
+    sed_in_place "$DESKTOP_FILE_SOURCE/sndcpy.desktop" "s|^Icon=.*|Icon=$_sndcpy_icon|"
 fi
 
 # Defining BIN_TARGET
@@ -217,15 +256,22 @@ link_or_backup() {
     # Source doesn't exist at all - nothing to do
     [ -e "$_src" ] || [ -L "$_src" ] || return 1
 
+    # Make sure the target's parent exists
+    _dir=$(dirname -- "$_tgt")
+    [ -d "$_dir" ] || mkdir -p "$_dir" || need_root "create $_dir"
+
     # Source is a broken symlink - clean up target if it's also a broken symlink
     if [ -L "$_src" ] && [ ! -e "$_src" ]; then
-        [ -L "$_tgt" ] && [ ! -e "$_tgt" ] && rm -f "$_tgt"
+        if [ -L "$_tgt" ] && [ ! -e "$_tgt" ]; then
+            rm -f "$_tgt" || need_root "remove the broken link $_tgt"
+        fi
         return 0
     fi
 
     # Target doesn't exist - just link
     if [ ! -e "$_tgt" ] && [ ! -L "$_tgt" ]; then
-        ln -sfn "$_src" "$_tgt" || sudo ln -sfn "$_src" "$_tgt"
+        ln -sfn "$_src" "$_tgt" || need_root "link $_tgt"
+        own "$_tgt"
         return 0
     fi
 
@@ -236,8 +282,9 @@ link_or_backup() {
 
     # Target is a broken symlink - remove and link
     if [ -L "$_tgt" ] && [ ! -e "$_tgt" ]; then
-        rm "$_tgt"
-        ln -sfn "$_src" "$_tgt" || sudo ln -sfn "$_src" "$_tgt"
+        rm "$_tgt" || need_root "remove the broken link $_tgt"
+        ln -sfn "$_src" "$_tgt" || need_root "link $_tgt"
+        own "$_tgt"
         return 0
     fi
 
@@ -249,8 +296,9 @@ link_or_backup() {
         _bak="${_tgt}.bak.${_i}"
         _i=$((_i+1))
     done
-    mv "$_tgt" "$_bak" 2>/dev/null || sudo mv "$_tgt" "$_bak" || return 1
-    ln -sfn "$_src" "$_tgt" || sudo ln -sfn "$_src" "$_tgt"
+    mv "$_tgt" "$_bak" || need_root "back up $_tgt to $_bak"
+    ln -sfn "$_src" "$_tgt" || need_root "link $_tgt"
+    own "$_tgt"
     return 0
 }
 
@@ -269,6 +317,13 @@ if [ -d "$BIN_TARGET" ]; then
     done
 fi
 
+# Stop the adb server before its data directory changes
+if [ -x "$BIN_SOURCE/adb" ]; then
+    "$BIN_SOURCE/adb" kill-server >/dev/null 2>&1
+elif command -v adb >/dev/null 2>&1; then
+    adb kill-server >/dev/null 2>&1
+fi
+
 # Link DAT_SOURCE to DAT_TARGET
 if [ -n "$DAT_TARGET" ]; then
     link_or_backup "$DAT_SOURCE" "$DAT_TARGET"
@@ -279,7 +334,8 @@ fi
 # BIN_TARGET can be a directory or a single file path
 if [ -d "$BIN_SOURCE" ]; then
     # BIN_SOURCE is a directory - link all executables
-    mkdir -p "$BIN_TARGET"
+    mkdir -p "$BIN_TARGET" || need_root "create $BIN_TARGET"
+    own_path "$BIN_TARGET"
     for f in "$BIN_SOURCE"/*; do
         [ -f "$f" ] || continue
         [ -x "$f" ] || continue
@@ -302,28 +358,32 @@ fi
 
 # Install the icon into the theme so desktop files can use Icon=<id>
 if [ -n "$ICON" ] && [ -e "$ICON" ] && [ -n "$ICON_ID" ] && [ "$ICON_METHOD" != "none" ]; then
-    mkdir -p "$ICON_TARGET"
+    mkdir -p "$ICON_TARGET" || need_root "create $ICON_TARGET"
+    own_path "$ICON_TARGET"
     if [ "$ICON_METHOD" = "link" ]; then
-        ln -sfn "$ICON" "$ICON_TARGET/$ICON_ID.$_icon_ext"
+        ln -sfn "$ICON" "$ICON_TARGET/$ICON_ID.$_icon_ext" || need_root "link $ICON_TARGET/$ICON_ID.$_icon_ext"
     else
-        rm -f "$ICON_TARGET/$ICON_ID.$_icon_ext"
-        cp -f "$ICON" "$ICON_TARGET/$ICON_ID.$_icon_ext"
+        rm -f "$ICON_TARGET/$ICON_ID.$_icon_ext" || need_root "replace $ICON_TARGET/$ICON_ID.$_icon_ext"
+        cp -f "$ICON" "$ICON_TARGET/$ICON_ID.$_icon_ext" || need_root "copy $ICON to $ICON_TARGET"
     fi
+    own "$ICON_TARGET/$ICON_ID.$_icon_ext"
     if command -v gtk-update-icon-cache >/dev/null 2>&1; then
         gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" >/dev/null 2>&1
+        own "$HOME/.local/share/icons/hicolor/icon-theme.cache"
     fi
 elif [ "$ICON_METHOD" != "none" ] && [ -n "$ICON_ID" ] && [ -n "$ICON_TARGET" ]; then
     # Source icon was removed: drop the managed theme icon too
     for _ext in svg png xpm jpg jpeg; do
-        rm -f "$ICON_TARGET/$ICON_ID.$_ext"
+        rm -f "$ICON_TARGET/$ICON_ID.$_ext" 2>/dev/null
     done
     if command -v gtk-update-icon-cache >/dev/null 2>&1; then
         gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" >/dev/null 2>&1
+        own "$HOME/.local/share/icons/hicolor/icon-theme.cache"
     fi
 fi
 
-# gnome/nautilus integration
-if command -v gio >/dev/null 2>&1; then
+# gio metadata is per-user; skip it when running as root
+if [ "$(id -u)" -ne 0 ] && command -v gio >/dev/null 2>&1; then
     if [ -n "$ICON" ] && [ -e "$ICON" ]; then
         _icon_uri="file://$(readlink -f -- "$ICON")"
         gio set -t string "$PORTABLE_ROOT" metadata::custom-icon "$_icon_uri"
@@ -332,6 +392,20 @@ if command -v gio >/dev/null 2>&1; then
         gio set -t unset "$PORTABLE_ROOT" metadata::custom-icon 2>/dev/null
         [ -n "$DAT_TARGET" ] && gio set -t unset "$DAT_TARGET" metadata::custom-icon 2>/dev/null
     fi
+fi
+
+# man linking
+if [ -n "$MAN" ] && [ -d "$MAN" ]; then
+    for src in "$MAN"/*.1; do
+        [ -e "$src" ] || continue
+
+        dst="/usr/share/man/man1/$(basename "$src")"
+
+        if [ ! -e "$dst" ] || ! [ "$src" -ef "$dst" ]; then
+            [ -w "/usr/share/man/man1" ] || need_root "link man pages into /usr/share/man/man1"
+            ln -sfn "$src" "$dst" || need_root "link $dst"
+        fi
+    done
 fi
 
 # Run the application

@@ -87,20 +87,22 @@ Detection never deletes a real file. Ambiguous layouts abort and print the candi
 
 `PACKAGE_MANAGER` selects the backend. Support means the runner owns the install and run logic for that backend; there is no universal package API.
 
-| Backend | Value | Install | Run |
-|---|---|---|---|
-| Native | `native` / `auto` | `pkgcli` > `pkcon` > `apt`/`dnf`/`pacman`+`yay`/`zypper` | command on `PATH` |
-| Distro only | `distro` | `apt`/`dnf`/`pacman`+`yay`/`zypper` | command on `PATH` |
-| Flatpak | `flatpak` | `flatpak install` | `flatpak run $FLATPAK_ID` |
-| Snap | `snap` | `snap install` | `snap run $PKG` |
-| Nix | `nix` | `nix profile install` | `nix run` |
-| Homebrew | `brew` | `brew install` | command on `PATH` |
-| Toolpak | `toolpak` | adapter | adapter |
-| pkgit | `pkgit` | adapter, source build | built binary |
-| cpak | `cpak` | `cpak install <source>` | `cpak run <pkg>` |
-| None | `none` | never | command on `PATH` |
+| Backend | Value | Install | Run | Root |
+|---|---|---|---|---|
+| Native | `native` / `auto` | `pkgcli` > `pkcon` > `apt`/`dnf`/`pacman`+`yay`/`zypper` | command on `PATH` | yes |
+| Distro only | `distro` | `apt`/`dnf`/`pacman`+`yay`/`zypper` | command on `PATH` | yes |
+| Flatpak | `flatpak` | `flatpak install` | `flatpak run $FLATPAK_ID` | no (user) |
+| Snap | `snap` | `snap install` | `snap run $PKG` | yes |
+| Nix | `nix` | `nix profile install` | `nix run` | no |
+| Homebrew | `brew` | `brew install` | command on `PATH` | no |
+| Toolpak | `toolpak` | adapter | adapter | adapter |
+| pkgit | `pkgit` | adapter, source build | built binary | adapter |
+| cpak | `cpak` | `cpak install <source>` | `cpak run <pkg>` | adapter |
+| None | `none` | never | command on `PATH` | no |
 
 `auto`/`native` walks `pkgcli` > `pkcon` > native. `distro` forces the distro manager only. The Flatpak profile derives its paths from `FLATPAK_ID`. Toolpak and pkgit are adapter-defined: the runner needs their install and run commands and does not assume a CLI. cpak is an OCI application package format: `cpak install` takes a source, `cpak run` takes the package.
+
+The runner never calls `sudo`. When a step needs root and it is not root, it stops and prints `Re-run as root: sudo ./runner`. Flatpak user installs and user-local links never need root.
 
 The runner checks `BIN_NAMES` first. If a command is missing, it installs `PKG`. If `PKG` is empty or the package name is unknown, it searches the backend and installs an exact match; several matches abort and print the candidates. It never replaces a working host binary.
 
@@ -130,7 +132,7 @@ The runner derives:
 - run via `flatpak run "$FLATPAK_ID"`, with no binary links;
 - desktop entry and icon from the Flatpak export, when present.
 
-User and system installs differ only in where the binaries live; the data path is always `~/.var/app/$FLATPAK_ID`. Some applications write outside the sandbox data directory: Heroic creates `~/Games`. Add it explicitly if you want it portable; it is not automatic.
+User and system installs differ only in where the binaries live; the data path is always `~/.var/app/$FLATPAK_ID`. User installs never need root. Some applications write outside the sandbox data directory: Heroic creates `~/Games`. Add it explicitly if you want it portable; it is not automatic.
 
 ## Methods
 
@@ -212,7 +214,7 @@ A portable folder can be zipped into one file for transport. Unzip it, click the
 The target engine enforces these rules. The reference template implements an earlier subset and does not yet meet all of them.
 
 - Existing host data is moved into the portable folder on first link; a real conflict is backed up as `.bak`, `.bak.1`, `.bak.2`, never overwritten. Backup is on by default (`BACKUP="yes"`).
-- A real file or directory is never replaced by a symlink unless the backup succeeds. Root-owned targets use `sudo` for the backup too.
+- A real file or directory is never replaced by a symlink unless the backup succeeds. If a target needs root, the runner stops and asks you to re-run it with sudo; it never invokes sudo itself.
 - Cleanup only touches links whose name and target belong to this runner. No broad `rm "$BIN_TARGET"/*`.
 - Every run is idempotent.
 - `UPAL_DRY_RUN=1` prints the planned actions and changes nothing. `UPAL_VERBOSE=1` prints detection results.
@@ -231,6 +233,7 @@ The target engine enforces these rules. The reference template implements an ear
 | `copy` and `copy-sync` data methods | specified |
 | Auto-detection of `bin` and `dat` | specified |
 | Package manager chain (`pkgcli` > `pkcon` > native) | partially implemented; search and `yay` fallback specified |
+| No internal sudo; root check and message | implemented |
 | Flatpak profile (auto paths) | specified |
 | Snap, Nix, Homebrew, Toolpak, pkgit, cpak adapters | specified |
 | Icon auto-detect, theme install, and reset | implemented |

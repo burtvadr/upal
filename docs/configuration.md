@@ -195,7 +195,7 @@ Leaves the host path alone. Use it to document a decision, or to disable a mappi
 
 ## Binary modes
 
-| Mode | Portable `bin/` | Host `BIN_TARGET` | sudo |
+| Mode | Portable `bin/` | Host `BIN_TARGET` | Root |
 |---|---|---|---|
 | `in` | symlinks to host binaries | untouched | no |
 | `out` | real binaries | symlinks to the portable folder | only for root-owned targets |
@@ -217,7 +217,7 @@ Host-provided (`in`, or host mode with no `bin/`) is the default. `out` and `cop
 Examples:
 
 ```sh
-# Host-owned binaries, no sudo, updates flow through
+# Host-owned binaries, no root, updates flow through
 BIN_MODE="in"
 BIN_SOURCE="$PORTABLE_ROOT/bin"
 ```
@@ -248,20 +248,24 @@ BIN_SOURCE="$PORTABLE_ROOT/bin"
 
 `PACKAGE_MANAGER` selects the backend. Support means the runner owns the install and run logic for that backend; there is no universal package API.
 
-| Value | Install | Run |
-|---|---|---|
-| `auto` / `native` | `pkgcli` > `pkcon` > native | command on `PATH` |
-| `distro` | native package manager only | command on `PATH` |
-| `flatpak` | `flatpak install` | `flatpak run "$FLATPAK_ID"` |
-| `snap` | `snap install` | `snap run "$PKG"` |
-| `nix` | `nix profile install nixpkgs#<pkg>` | `nix run nixpkgs#<pkg>` |
-| `brew` | `brew install` | command on `PATH` |
-| `toolpak` | adapter-defined | adapter-defined |
-| `pkgit` | adapter-defined, source build | built binary |
-| `cpak` | `cpak install <source>` | `cpak run <pkg>` |
-| `none` | never | command on `PATH` |
+| Value | Install | Run | Root |
+|---|---|---|---|
+| `auto` / `native` | `pkgcli` > `pkcon` > native | command on `PATH` | yes* |
+| `distro` | native package manager only | command on `PATH` | yes |
+| `flatpak` | `flatpak install` | `flatpak run "$FLATPAK_ID"` | no (user) |
+| `snap` | `snap install` | `snap run "$PKG"` | yes |
+| `nix` | `nix profile install nixpkgs#<pkg>` | `nix run nixpkgs#<pkg>` | no |
+| `brew` | `brew install` | command on `PATH` | no |
+| `toolpak` | adapter-defined | adapter-defined | adapter-defined |
+| `pkgit` | adapter-defined, source build | built binary | adapter-defined |
+| `cpak` | `cpak install <source>` | `cpak run <pkg>` | adapter-defined |
+| `none` | never | command on `PATH` | no |
+
+\* `pkgcli` and `pkcon` may authenticate through polkit; the native package managers need root.
 
 Toolpak and pkgit are adapter-defined: the runner needs their install and run commands and does not assume a CLI. cpak is an OCI application package format: `cpak install` takes a source such as `github.com/owner/repo`, and `cpak run` takes the package and an optional command. When the backend is not a package manager, use `app_install` and `app_run` to own the steps.
+
+The runner never calls `sudo`. When a step needs root and the runner is not root, it stops with `This needs root: ...` and `Re-run as root: sudo ./runner`. Flatpak user installs and user-local links never need root.
 
 Native mapping:
 
@@ -301,7 +305,7 @@ PACKAGE_MANAGER="flatpak"
 FLATPAK_ID="com.developer.App"
 ```
 
-The data path is the same for user and system installs. Some applications write outside `~/.var/app/$FLATPAK_ID`; add those paths explicitly with the `redirect` helper in a hook. Heroic's `~/Games` is the common example.
+The data path is the same for user and system installs. User installs never need root. Some applications write outside `~/.var/app/$FLATPAK_ID`; add those paths explicitly with the `redirect` helper in a hook. Heroic's `~/Games` is the common example.
 
 ## Detection
 
@@ -384,9 +388,23 @@ The runner installs the icon into the hicolor theme at `~/.local/share/icons/hic
 
 Environment variables are used instead of CLI flags so application arguments from `%U` and `%F` pass through untouched.
 
+## Root and sudo
+
+The runner never invokes `sudo`, `doas`, or another escalator. It runs as the user and stops when a step needs root:
+
+```text
+This needs root: link man pages into /usr/share/man/man1
+Re-run as root: sudo ./runner
+```
+
+- User-local paths (`~/.local`, `~/.config`), Flatpak user installs, Nix, and Homebrew need no root.
+- System package managers (`apt`, `dnf`, `pacman`, `zypper`, `snap`) and system directories (`/usr/share/man`, `/usr/local/bin`) need root.
+- When run through `sudo` or `doas`, the engine uses `SUDO_USER`/`DOAS_USER` to keep `HOME` pointed at the invoking user, and gives created files back to that user.
+- Run the whole runner as root only when it asks. A Flatpak runner should never ask.
+
 ## Safety rules
 
-1. Never replace a real file or directory without a successful backup. Back up with `sudo` when the target is root-owned; abort if the backup fails.
+1. Never replace a real file or directory without a successful backup. If the target is root-owned, run the runner with sudo; the engine never invokes sudo. Abort if the backup fails.
 2. Only touch links whose name is managed and whose target belongs to this runner. No broad globs.
 3. Back up conflicts as `.bak`, `.bak.1`, `.bak.2`, and so on; never overwrite. `BACKUP="yes"` is the default.
 4. Every run is idempotent.
