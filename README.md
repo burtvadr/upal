@@ -2,7 +2,7 @@
 
 **Universal Portable Abstraction Layer** — one file that turns an application into a portable folder.
 
-UPAL keeps an application's identity and state in a directory you own. The host package manager can still provide the binaries; the portable folder provides the data, the launcher, and the rules. Move the folder, click the runner, and the app continues where it left off.
+UPAL is a portable data layer first and a launcher second. The folder owns the user data; the binaries are disposable. They can come from the host package manager, a local build, or the folder itself. Move the folder, click the runner, and the app continues where it left off.
 
 ## The single-file rule
 
@@ -28,6 +28,18 @@ Most Linux packages split an application across paths the user does not control:
 
 The result is that a backup, a move to another drive, or a copy to another machine means hunting through several directories. UPAL replaces that with one folder:
 
+## Data first, binaries disposable
+
+The irreplaceable part is user data: profiles, saves, plugins, configuration, state. Binaries can be reinstalled or rebuilt. UPAL therefore defaults to host-provided binaries and treats folder-owned binaries as an optional mode.
+
+- **Host-provided** (`in`, or host mode with no `bin/`) — the distro manages updates and security.
+- **Folder-owned** (`out`, `copy`) — offline use, a self-contained folder, or a locally compiled build.
+- **No binaries at all** — click and run; the package manager installs them.
+
+A locally compiled application fits the same model: put the binary in `bin/`, set `BIN_MODE="copy"`, and keep the data mapping.
+
+The layout:
+
 ```text
 MyApp/
 ├── runner          # the only manager file
@@ -42,7 +54,7 @@ The runner resolves its own location, so the folder can be renamed or moved. The
 ## Quick start
 
 ```sh
-mkdir -p ~/Apps/GIMP/{bin,dat}
+mkdir -p ~/Apps/GIMP/dat
 cp posix_variables ~/Apps/GIMP/runner
 chmod +x ~/Apps/GIMP/runner
 $EDITOR ~/Apps/GIMP/runner
@@ -76,6 +88,18 @@ Precedence, highest first:
 
 Detection never deletes a real file. Ambiguous layouts abort and print the candidates instead of guessing.
 
+## Package manager abstraction
+
+`PACKAGE_MANAGER` decides how missing binaries are obtained. The default chain is:
+
+1. `pkgcli` — PackageKit-based, preferred when installed.
+2. `pkcon` — older PackageKit CLI; not present everywhere.
+3. native — `apt`/`apt-get` on Debian/Ubuntu, `dnf` on Fedora, `pacman` then `yay` on Arch, `zypper` on openSUSE.
+
+`PACKAGE_MANAGER="auto"` (the default) walks that chain. `native` is an alias. `distro` forces the distro manager only. `flatpak` uses `FLATPAK_ID`. `none` disables installation.
+
+The runner checks `BIN_NAMES` first. If a command is missing, it installs `PKG`. If `PKG` is empty or the package name is unknown, it searches the backend and installs an exact match; several matches abort and print the candidates. It never replaces a working host binary.
+
 ## Methods
 
 Everything is one primitive:
@@ -94,7 +118,7 @@ redirect <portable> <host> <method>
 
 `link` is the default. `env` is the clean fallback for apps that respect `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, or their own variable. `bind` is specified but not implemented: it needs a mount/unmount lifecycle and does not survive a reboot.
 
-Binaries have their own modes: `in` (portable links to host binaries), `out` (real binaries in the folder, links on the host), `copy` (real binaries, no host links), and host mode (no `bin/`, run from `PATH`).
+Binaries have their own modes: `in` (portable links to host binaries), `out` (real binaries in the folder, links on the host), `copy` (real binaries, no host links), and host mode (no `bin/`, run from `PATH`). Host-provided is the default and the recommended mode; folder-owned is opt-in.
 
 ## XDG overrides
 
@@ -153,6 +177,7 @@ The target engine enforces these rules. The reference template implements an ear
 | Binary link-in | specified |
 | `env` and `link-out` data methods | specified |
 | Auto-detection of `bin` and `dat` | specified |
+| Package manager chain (`pkgcli` > `pkcon` > native) | partially implemented; search and `yay` fallback specified |
 | `bind` method | deferred |
 | Rust engine | future |
 | Windows support | future, native binary only |

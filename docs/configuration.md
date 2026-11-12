@@ -2,6 +2,8 @@
 
 The runner is one file. The header at the top is the configuration; the rest is the engine. Explicit values win; empty values trigger detection.
 
+Data is the primary use case. Binaries are replaceable; the data mapping is the part that must survive. Host-provided binaries are the default, and folder-owned binaries are opt-in.
+
 > The reference template (`posix_variables`) implements the `link` and binary `out` subset today. The `env`, `link-out`, `bind`, and auto-detection rules below are the target contract.
 
 ## Header
@@ -16,7 +18,7 @@ PORTABLE_ROOT=$(cd -P -- "$(dirname -- "$SELF")" && command pwd -P)
 
 # Variables
 PKG=""
-PACKAGE_MANAGER="distro"
+PACKAGE_MANAGER="auto"
 FLATPAK_ID=""
 BIN_NAMES=""
 DAT_SOURCE=""
@@ -47,10 +49,10 @@ KILL_TERMINAL="yes"
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `PKG` | `""` | Package or packages to install, space-separated. Empty means the runner filename. |
-| `PACKAGE_MANAGER` | `distro` | `distro`, `auto`, `flatpak`, or `none`. |
+| `PKG` | `""` | Package or packages to install, space-separated. Empty means search for `BIN_NAMES`, or use the runner filename. |
+| `PACKAGE_MANAGER` | `auto` | `auto`/`native` (PackageKit chain), `distro` (native only), `flatpak`, or `none`. |
 | `FLATPAK_ID` | `""` | Flatpak application ID, when the package is a Flatpak. |
-| `BIN_NAMES` | `""` | Commands to check, link, and run. Empty means the words in `PKG`. |
+| `BIN_NAMES` | `""` | Commands to check, link, and run. Empty means the words in `PKG`, or the runner filename. |
 | `DAT_SOURCE` | `""` | Portable data directory. Empty means detect; if `DAT_TARGET` is set, defaults to `$PORTABLE_ROOT/dat`. |
 | `DAT_TARGET` | `""` | Host data path. Empty means XDG mapping when the data directory is XDG-shaped, otherwise no redirection. |
 | `DAT_METHOD` | `link` | `link`, `link-out`, `env`, `bind`, or `none`. |
@@ -161,6 +163,8 @@ Leaves the host path alone. Use it to document a decision, or to disable a mappi
 | `copy` | real binaries | untouched | no |
 | host | absent | untouched | no |
 
+Host-provided (`in`, or host mode with no `bin/`) is the default. `out` and `copy` are for offline use, a self-contained folder, or a locally compiled binary. Data portability does not depend on any of them.
+
 `auto` inspects the contents:
 
 - symlinks in `bin/` → `in`;
@@ -200,6 +204,32 @@ bin/gimp (real)
 BIN_MODE="copy"
 BIN_SOURCE="$PORTABLE_ROOT/bin"
 ```
+
+## Package manager
+
+`PACKAGE_MANAGER` controls how missing commands are obtained.
+
+| Value | Behavior |
+|---|---|
+| `auto` / `native` | `pkgcli` > `pkcon` > native |
+| `distro` | native package manager only |
+| `flatpak` | `flatpak install` and `flatpak run` with `FLATPAK_ID` |
+| `none` | never install |
+
+Native mapping:
+
+| Distro | Command |
+|---|---|
+| Debian/Ubuntu | `apt-get` (or `apt`) |
+| Fedora | `dnf` |
+| Arch | `pacman`, then `yay` for AUR |
+| openSUSE | `zypper` |
+
+The runner checks `BIN_NAMES` first. If every command exists, no install happens. If one is missing, it installs the corresponding word from `PKG`. If `PKG` is empty, it searches the backend for the command name and installs an exact match. Several matches abort and print the candidates; the runner never installs an ambiguous package.
+
+Search commands used by the native fallback: `apt-cache search`, `dnf search`, `pacman -Ss`, `zypper search`. `pkgcli` and `pkcon` search first when available.
+
+Packages are installed one per word, so `PKG="adb fastboot heimdall scrcpy"` loops over four packages. `BIN_NAMES` is separate because a package name and a command name often differ.
 
 ## Detection
 

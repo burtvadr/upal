@@ -45,6 +45,12 @@ Binaries use the same idea with a different unit: a command name, a source direc
 
 The runner is idempotent. Running it twice changes nothing.
 
+## Data first
+
+UPAL is a portable data layer, not a portable binary format. The irreplaceable part is user data; binaries are disposable. The default is host-provided binaries, with the distro managing updates and security. Folder-owned binaries are an opt-in mode for offline use, a locally compiled build, or a self-contained folder.
+
+This is why the data mapping is the center of the contract and the binary mode is secondary. A user can change `BIN_MODE` without touching the data; changing the data mapping is the decision that matters.
+
 ## Data is per application
 
 There is no global definition of valuable user data. A browser profile, a game save, a cache directory, and a plugin directory are all different decisions. The wrapper cannot know which ones matter.
@@ -58,6 +64,18 @@ Therefore:
 - the hook is the escape hatch for applications with several state directories.
 
 This is why the configuration stays per runner instead of becoming a system-wide policy.
+
+## Package manager abstraction
+
+Missing binaries are resolved through a backend chain, not bundled by default:
+
+```text
+pkgcli > pkcon > native (apt, dnf, pacman/yay, zypper)
+```
+
+`auto` is the default and `native` is an alias. `distro` forces the distro manager only. `flatpak` uses `FLATPAK_ID`. `none` disables installation.
+
+The runner checks commands first, installs packages only when needed, and searches only when the package name is unknown. Ambiguous search results abort. A working host binary is never replaced.
 
 ## POSIX first
 
@@ -108,8 +126,8 @@ It is the last resort for applications that replace symlinks. Document it, imple
 
 1. Freeze the contract in this repository.
 2. Harden the POSIX engine: safety, dry-run, tests.
-3. Add `env`, `link-out`, and auto-detection.
+3. Add `env`, `link-out`, auto-detection, and the package manager chain.
 4. Port the proof-of-concept runners and add hooks to the template updater.
-5. Add XDG mapping and Flatpak support.
+5. Add XDG mapping, Flatpak, and the search fallback.
 6. Build the Rust engine against the same fixtures.
 7. Add Windows support as a native binary.

@@ -5,7 +5,7 @@
 PORTABLE_ROOT=$(cd -P -- "$(dirname -- "$0")" && command pwd -P)
 
 # Variables
-PACKAGE_MANAGER="distro"
+PACKAGE_MANAGER="auto"
 PKG=""
 NAME="$PKG"
 DAT_SOURCE="$PORTABLE_ROOT/dat"
@@ -53,15 +53,15 @@ printf '%s\n' "$paths" | while IFS= read -r path; do
 done
 
 # Install the package if not already installed
-# PACKAGE_MANAGER: "auto" tries pkgcli > pkcon > distro; "distro" uses only the distro package manager
+# PACKAGE_MANAGER: "auto"/"native" tries pkgcli > pkcon > distro; "distro" uses only the distro package manager
 if [ -n "$PKG" ]; then
     if command -v "$PKG" >/dev/null 2>&1; then
         : # already installed
-    elif [ "$PACKAGE_MANAGER" = "auto" ] && command -v pkgcli >/dev/null 2>&1; then
+    elif { [ "$PACKAGE_MANAGER" = "auto" ] || [ "$PACKAGE_MANAGER" = "native" ]; } && command -v pkgcli >/dev/null 2>&1; then
         pkgcli install "$PKG"
-    elif [ "$PACKAGE_MANAGER" = "auto" ] && command -v pkcon >/dev/null 2>&1; then
+    elif { [ "$PACKAGE_MANAGER" = "auto" ] || [ "$PACKAGE_MANAGER" = "native" ]; } && command -v pkcon >/dev/null 2>&1; then
         pkcon install "$PKG"
-    elif [ "$PACKAGE_MANAGER" = "auto" ] || [ "$PACKAGE_MANAGER" = "distro" ]; then
+    elif [ "$PACKAGE_MANAGER" = "auto" ] || [ "$PACKAGE_MANAGER" = "native" ] || [ "$PACKAGE_MANAGER" = "distro" ]; then
         . /etc/os-release
         case "$ID" in
             ubuntu|debian)

@@ -4,6 +4,29 @@ Each example is a complete portable root. Only the header changes; the engine is
 
 > These examples use the target header. The reference template implements the `link` and binary `out` subset; see the status table in the README.
 
+The examples are data-first. Binaries are optional; the host package manager can provide them.
+
+## Data only: the main use case
+
+The application is installed by the host; only its data is portable.
+
+```text
+MyApp/
+├── runner
+└── dat/
+```
+
+```sh
+PKG="myapp"
+BIN_NAMES="myapp"
+DAT_SOURCE="$PORTABLE_ROOT/dat"
+DAT_TARGET="$HOME/.config/myapp"
+DAT_METHOD="link"
+BIN_MODE="auto"
+```
+
+There is no `bin/`, so the runner uses the host command. The first run moves existing host data into `dat/` and links it back. Reinstalling or upgrading the application does not touch the data.
+
 ## Minimal: click and run
 
 No binaries and no data in the folder. The runner installs the package if needed and runs it.
@@ -142,6 +165,8 @@ app_post_link() {
 The `app_pre_link` hook stops a running adb server before the data link changes. The `app_post_link` hook gives `sndcpy.desktop` its own icon.
 
 ## Self-contained: binaries in the folder, no host links
+
+Optional. Use this for offline machines or a binary you compiled yourself.
 
 ```text
 MyApp/
