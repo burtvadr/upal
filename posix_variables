@@ -2,31 +2,7 @@
 # POSIX generic portable application script
 
 # Directory where this script lives
-SELF=$(readlink -f -- "$0" 2>/dev/null) || SELF=$0
-PORTABLE_ROOT=$(cd -P -- "$(dirname -- "$SELF")" && command pwd -P)
-
-# Keep user paths and ownership when run through sudo, doas, or another escalator
-ORIG_USER=${SUDO_USER:-${DOAS_USER:-}}
-ORIG_UID=${SUDO_UID:-${DOAS_UID:-}}
-ORIG_GID=${SUDO_GID:-${DOAS_GID:-}}
-if [ "$(id -u)" -eq 0 ] && [ -n "$ORIG_USER" ] && [ "$ORIG_USER" != "root" ]; then
-    ORIG_HOME=$(getent passwd "$ORIG_USER" 2>/dev/null | cut -d: -f6)
-    [ -n "$ORIG_HOME" ] || ORIG_HOME=$(awk -F: -v u="$ORIG_USER" '$1 == u { print $6; exit }' /etc/passwd)
-    [ -n "$ORIG_HOME" ] && HOME="$ORIG_HOME"
-fi
-if [ -z "$ORIG_UID" ] && [ -n "$ORIG_USER" ]; then
-    ORIG_UID=$(id -u "$ORIG_USER" 2>/dev/null)
-    ORIG_GID=$(id -g "$ORIG_USER" 2>/dev/null)
-fi
-
-# Suggest an escalator without invoking it
-if command -v sudo >/dev/null 2>&1; then
-    ESCALATOR=sudo
-elif command -v doas >/dev/null 2>&1; then
-    ESCALATOR=doas
-else
-    ESCALATOR=""
-fi
+PORTABLE_ROOT=$(cd -P -- "$(dirname -- "$0")" && command pwd -P)
 
 # Variables
 PACKAGE_MANAGER="auto"
@@ -54,6 +30,30 @@ CACHE_SOURCE=""
 CACHE_TARGET="" 
 MAN="$BIN_SOURCE"
 KILL_TERMINAL="yes"
+
+# Runtime paths and privileges
+SELF=$PORTABLE_ROOT/$(basename -- "$0")
+ORIG_USER=${SUDO_USER:-${DOAS_USER:-}}
+ORIG_UID=${SUDO_UID:-${DOAS_UID:-}}
+ORIG_GID=${SUDO_GID:-${DOAS_GID:-}}
+if [ "$(id -u)" -eq 0 ] && [ -n "$ORIG_USER" ] && [ "$ORIG_USER" != "root" ]; then
+    ORIG_HOME=$(getent passwd "$ORIG_USER" 2>/dev/null | cut -d: -f6)
+    [ -n "$ORIG_HOME" ] || ORIG_HOME=$(awk -F: -v u="$ORIG_USER" '$1 == u { print $6; exit }' /etc/passwd)
+    [ -n "$ORIG_HOME" ] && HOME="$ORIG_HOME"
+fi
+if [ -z "$ORIG_UID" ] && [ -n "$ORIG_USER" ]; then
+    ORIG_UID=$(id -u "$ORIG_USER" 2>/dev/null)
+    ORIG_GID=$(id -g "$ORIG_USER" 2>/dev/null)
+fi
+
+# Suggest an escalator without invoking it
+if command -v sudo >/dev/null 2>&1; then
+    ESCALATOR=sudo
+elif command -v doas >/dev/null 2>&1; then
+    ESCALATOR=doas
+else
+    ESCALATOR=""
+fi
 
 # Fail instead of calling sudo
 need_root() {

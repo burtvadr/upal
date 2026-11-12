@@ -13,8 +13,7 @@ Data is the primary use case. Binaries are replaceable; the data mapping is the 
 # POSIX generic portable application script
 
 # Directory where this script lives
-SELF=$(readlink -f -- "$0" 2>/dev/null) || SELF=$0
-PORTABLE_ROOT=$(cd -P -- "$(dirname -- "$SELF")" && command pwd -P)
+PORTABLE_ROOT=$(cd -P -- "$(dirname -- "$0")" && command pwd -P)
 
 # Variables
 PKG=""
@@ -50,7 +49,7 @@ MAN="$BIN_SOURCE"
 KILL_TERMINAL="yes"
 ```
 
-`SELF` is resolved through `readlink -f` so a runner symlinked into `PATH` still finds its real root. Every path variable is quoted; spaces and non-ASCII names are supported.
+`SELF` is set by the engine from `PORTABLE_ROOT` after the header. Every path variable is quoted; spaces and non-ASCII names are supported.
 
 ## Variables
 
