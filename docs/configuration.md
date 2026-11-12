@@ -74,7 +74,7 @@ KILL_TERMINAL="yes"
 | `CACHE_TARGET` | `""` | Host cache path. |
 | `CACHE_METHOD` | `link` | Same methods as `DAT_METHOD`. |
 | `MAN` | `$BIN_SOURCE` | Directory containing `*.1` man pages. Empty disables man linking. |
-| `KILL_TERMINAL` | `yes` | Close the terminal that launched the runner after the app starts. |
+| `KILL_TERMINAL` | `yes` | Close the terminal that launched the runner after the app starts. Ignored when the runner was not started from a terminal. |
 
 ## Data reuse and version compatibility
 

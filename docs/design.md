@@ -41,7 +41,7 @@ Binaries use the same idea with a different unit: a command name, a source direc
 8. Link and rewrite desktop files, icon, man pages.
 9. Run `app_env`, `app_pre_link`, `app_post_link`.
 10. Launch the application with the original arguments, or call `app_run`.
-11. Close the terminal only when `KILL_TERMINAL=yes`.
+11. Close the terminal only when `KILL_TERMINAL=yes` and the runner has a controlling terminal.
 
 The runner is idempotent. Running it twice changes nothing.
 

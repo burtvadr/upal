@@ -161,7 +161,6 @@ fi
 link_or_backup() {
     _src=$1
     _tgt=$2
-    _i
 
     # Source doesn't exist at all - nothing to do
     [ -e "$_src" ] || [ -L "$_src" ] || return 1
@@ -226,7 +225,7 @@ if [ -d "$BIN_SOURCE" ]; then
     # BIN_SOURCE is a directory - link all executables
     mkdir -p "$BIN_TARGET"
     for f in "$BIN_SOURCE"/*; do
-        [ -e "$f" ] || [ -L "$f" ] || continue
+        [ -f "$f" ] || continue
         [ -x "$f" ] || continue
         name=$(basename "$f")
         target="$BIN_TARGET/$name"
@@ -262,5 +261,7 @@ if [ -n "$PKG" ] && command -v "$PKG" >/dev/null 2>&1; then
     nohup "$PKG" >/dev/null 2>&1 &
 fi
 
-# Kill the terminal if KILL_TERMINAL is yes
-[ "$KILL_TERMINAL" = "yes" ] && kill -TERM "$PPID"
+# Kill the terminal if KILL_TERMINAL is yes and the runner was started from one
+if [ "$KILL_TERMINAL" = "yes" ] && [ -t 0 ]; then
+    kill -TERM "$PPID"
+fi

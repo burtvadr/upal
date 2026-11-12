@@ -5,22 +5,38 @@
 PORTABLE_ROOT=$(cd -P -- "$(dirname -- "$0")" && command pwd -P)
 
 # Variables
-PACKAGE_MANAGER="distro"
-PKG="adb fastboot heimdall scrcpy"
+PACKAGE_MANAGER="none"
+PKG=""
+NAME="adb, fastboot, heimdall and scrcpy"
 DAT_SOURCE="$PORTABLE_ROOT/dat"
-DAT_TARGET="$HOME/.android" 
+DAT_TARGET="$HOME/.android"
+BACKUP="yes"
 BIN_SOURCE="$PORTABLE_ROOT/bin"
 BIN_TARGET=""
+DESKTOP_FILE_NAME="scrcpy.desktop"
 DESKTOP_FILE_SOURCE="$PORTABLE_ROOT"
 DESKTOP_FILE_TARGET="$HOME/.local/share/applications"
-DESKTOP_FILE_NAME="scrcpy.desktop"
+ICON_NAME="scrcpy.svg"
 ICON_SOURCE="$PORTABLE_ROOT"
 ICON_TARGET=""
-ICON_NAME="scrcpy.svg"
-NAME="adb, fastboot, heimdall and scrcpy"
-CACHE_SOURCE="" 
-CACHE_TARGET="" 
+ICON=""
+CACHE_SOURCE=""
+CACHE_TARGET=""
 MAN="$BIN_SOURCE"
+KILL_TERMINAL="yes"
+
+# First image in ICON_SOURCE becomes the icon; ICON_NAME pins one
+if [ -z "$ICON_NAME" ] && [ -d "$ICON_SOURCE" ]; then
+    for f in "$ICON_SOURCE"/*; do
+        [ -f "$f" ] || continue
+        case "$(file -b --mime-type -- "$f" 2>/dev/null)" in
+            image/*) ICON_NAME=${f##*/}; break ;;
+        esac
+    done
+fi
+if [ -n "$ICON_NAME" ]; then
+    ICON="$ICON_SOURCE/$ICON_NAME"
+fi
 
 # Check whether any target path is on a filesystem without POSIX permission support
 paths="
@@ -32,6 +48,11 @@ $CACHE_SOURCE
 $MAN
 "
 
+# Language-based directory name assumptions
+LANG_INFERRING_BIN="bin binary binaries binarios executables executável executáveis executaveis executavel"
+LANG_INFERRING_DATA="dat data dados config user"
+
+# Check whether any target path is on a filesystem without POSIX permission support
 printf '%s\n' "$paths" | while IFS= read -r path; do
     [ -z "$path" ] && continue
 
@@ -45,17 +66,45 @@ printf '%s\n' "$paths" | while IFS= read -r path; do
     esac
 done
 
-# adb specific stuff
-adb kill-server
+# Install the package if not already installed
+# PACKAGE_MANAGER: "auto"/"native" tries pkgcli > pkcon > distro; "distro" uses only the distro package manager
+if [ -n "$PKG" ]; then
+    if command -v "$PKG" >/dev/null 2>&1; then
+        : # already installed
+    elif { [ "$PACKAGE_MANAGER" = "auto" ] || [ "$PACKAGE_MANAGER" = "native" ]; } && command -v pkgcli >/dev/null 2>&1; then
+        pkgcli install "$PKG"
+    elif { [ "$PACKAGE_MANAGER" = "auto" ] || [ "$PACKAGE_MANAGER" = "native" ]; } && command -v pkcon >/dev/null 2>&1; then
+        pkcon install "$PKG"
+    elif [ "$PACKAGE_MANAGER" = "auto" ] || [ "$PACKAGE_MANAGER" = "native" ] || [ "$PACKAGE_MANAGER" = "distro" ]; then
+        . /etc/os-release
+        case "$ID" in
+            ubuntu|debian)
+                sudo apt-get update
+                sudo apt-get install -y "$PKG"
+                ;;
+            fedora)
+                sudo dnf install -y "$PKG" --skip-unavailable
+                ;;
+            arch)
+                sudo pacman -S "$PKG"
+                ;;
+            opensuse*)
+                sudo zypper install -y "$PKG"
+                ;;
+        esac
+    fi
+fi
 
-# Resolve sndcpy desktop files icons
-for file in "$DESKTOP_FILE_SOURCE"/sndcpy.desktop; do
-    sed -i "s|^Icon=.*|Icon=${ICON_SOURCE}/sndcpy.svg|" "$file"
-done
+# Stop the adb server before its data directory changes
+if [ -x "$BIN_SOURCE/adb" ]; then
+    "$BIN_SOURCE/adb" kill-server >/dev/null 2>&1
+elif command -v adb >/dev/null 2>&1; then
+    adb kill-server >/dev/null 2>&1
+fi
 
 # man linking
 for src in "$MAN"/*.1; do
-    [ -e "$src" ] || continue   # in case no .1 files exist
+    [ -e "$src" ] || continue
 
     dst="/usr/share/man/man1/$(basename "$src")"
 
@@ -65,16 +114,34 @@ for src in "$MAN"/*.1; do
 done
 
 # Link all .desktop files
-mkdir -p "$DESKTOP_FILE_TARGET"
+if [ -d "$DESKTOP_FILE_SOURCE" ]; then
+    mkdir -p "$DESKTOP_FILE_TARGET"
 
-for file in "$DESKTOP_FILE_SOURCE"/*.desktop; do
-    ln -sfn "$file" "$DESKTOP_FILE_TARGET"
-done
+    for file in "$DESKTOP_FILE_SOURCE"/*.desktop; do
+        [ -e "$file" ] || continue
+        ln -sfn "$file" "$DESKTOP_FILE_TARGET"
+    done
+fi
 
 # resolve desktop file icons
-for file in "$DESKTOP_FILE_SOURCE"/"$DESKTOP_FILE_NAME"; do
-    sed -i "s|^Icon=.*|Icon=${ICON_SOURCE}/${ICON_NAME}|" "$file"
-done
+if [ -n "$DESKTOP_FILE_NAME" ]; then
+    if [ -n "$ICON" ]; then
+        _icon="$ICON"
+    else
+        _icon="${NAME:-$PKG}"
+    fi
+    for file in "$DESKTOP_FILE_SOURCE"/"$DESKTOP_FILE_NAME"; do
+        [ -e "$file" ] || continue
+        if [ -n "$_icon" ]; then
+            sed -i "s|^Icon=.*|Icon=$_icon|" "$file"
+        fi
+    done
+fi
+
+# sndcpy has its own icon
+if [ -e "$DESKTOP_FILE_SOURCE/sndcpy.desktop" ]; then
+    sed -i "s|^Icon=.*|Icon=$ICON_SOURCE/sndcpy.svg|" "$DESKTOP_FILE_SOURCE/sndcpy.desktop"
+fi
 
 # Defining BIN_TARGET
 in_path() {
@@ -84,12 +151,14 @@ in_path() {
     esac
 }
 
-for d in "$HOME/.local/bin" "$HOME/bin" "/usr/local/bin" "/usr/bin"; do
-    if in_path "$d"; then
-        BIN_TARGET=$d
-        break
-    fi
-done
+if [ -z "$BIN_TARGET" ]; then
+    for d in "$HOME/.local/bin" "$HOME/bin" "/usr/local/bin" "/usr/bin"; do
+        if in_path "$d"; then
+            BIN_TARGET=$d
+            break
+        fi
+    done
+fi
 
 # Fail early if nothing in PATH matches
 [ -n "${BIN_TARGET:-}" ] || {
@@ -98,14 +167,21 @@ done
 }
 
 # link_or_backup <source> <target>
-# Symlink target → source. Backs up anything that would be overwritten.
+# Symlink target -> source. Backs up anything that would be overwritten as .bak.
 # If target is a symlink resolving to the same inode as source, it's left as-is.
+# If source is a broken symlink, any broken symlink at target is removed.
 link_or_backup() {
     _src=$1
     _tgt=$2
-    _i
 
-    [ -e "$_src" ] || return 1
+    # Source doesn't exist at all - nothing to do
+    [ -e "$_src" ] || [ -L "$_src" ] || return 1
+
+    # Source is a broken symlink - clean up target if it's also a broken symlink
+    if [ -L "$_src" ] && [ ! -e "$_src" ]; then
+        [ -L "$_tgt" ] && [ ! -e "$_tgt" ] && rm -f "$_tgt"
+        return 0
+    fi
 
     # Target doesn't exist - just link
     if [ ! -e "$_tgt" ] && [ ! -L "$_tgt" ]; then
@@ -126,35 +202,78 @@ link_or_backup() {
     fi
 
     # Target exists (directory, file, or symlink pointing elsewhere) - back up and link
+    [ "${BACKUP:-yes}" = "yes" ] || return 1
+    _bak="${_tgt}.bak"
     _i=1
-    while [ -e "${_tgt}${_i}" ] || [ -L "${_tgt}${_i}" ]; do _i=$((_i+1)); done
-    mv "$_tgt" "${_tgt}${_i}"
+    while [ -e "$_bak" ] || [ -L "$_bak" ]; do
+        _bak="${_tgt}.bak.${_i}"
+        _i=$((_i+1))
+    done
+    mv "$_tgt" "$_bak" 2>/dev/null || sudo mv "$_tgt" "$_bak" || return 1
     ln -sfn "$_src" "$_tgt" || sudo ln -sfn "$_src" "$_tgt"
     return 0
 }
 
-# Link DAT_SOURCE to DAT_TARGET
-link_or_backup "$DAT_SOURCE" "$DAT_TARGET"
+# Clean up broken symlinks if sources were removed
+if [ -n "$DAT_TARGET" ] && [ -L "$DAT_TARGET" ] && [ ! -e "$DAT_TARGET" ]; then
+    rm -f "$DAT_TARGET"
+fi
 
-# Link all executables from BIN_SOURCE to BIN_TARGET
-if [ -d "$BIN_SOURCE" ]; then
-    mkdir -p "$BIN_TARGET"
-    for f in "$BIN_SOURCE"/*; do
-        [ -e "$f" ] || continue
-        [ -x "$f" ] || continue
-
-        name=$(basename "$f")
-        target="$BIN_TARGET/$name"
-
-        if [ ! -e "$target" ] || ! [ "$f" -ef "$target" ]; then
-            ln -sfn "$f" "$target" 2>/dev/null || sudo ln -sfn "$f" "$target"
-        fi
+if [ -d "$BIN_TARGET" ]; then
+    for link in "$BIN_TARGET"/*; do
+        [ -L "$link" ] && [ ! -e "$link" ] && rm -f "$link"
     done
 fi
 
-#gnome/nautlus integration
-gio set -t string "$PORTABLE_ROOT" metadata::custom-icon "file://$(readlink -f "$ICON_SOURCE"/"$ICON_NAME")"
-gio set -t string "$DAT_TARGET" metadata::custom-icon "file://$(readlink -f "$ICON_SOURCE"/"$ICON_NAME")"
+# Link DAT_SOURCE to DAT_TARGET
+if [ -n "$DAT_TARGET" ]; then
+    link_or_backup "$DAT_SOURCE" "$DAT_TARGET"
+fi
 
-sleep 1
-kill -TERM "$PPID"
+# Link binaries from BIN_SOURCE to BIN_TARGET
+# BIN_SOURCE can be a directory or a single file
+# BIN_TARGET can be a directory or a single file path
+if [ -d "$BIN_SOURCE" ]; then
+    # BIN_SOURCE is a directory - link all executables
+    mkdir -p "$BIN_TARGET"
+    for f in "$BIN_SOURCE"/*; do
+        [ -f "$f" ] || continue
+        [ -x "$f" ] || continue
+        name=$(basename "$f")
+        target="$BIN_TARGET/$name"
+        link_or_backup "$f" "$target"
+    done
+elif [ -f "$BIN_SOURCE" ] || [ -L "$BIN_SOURCE" ]; then
+    # BIN_SOURCE is a single file
+    if [ -d "$BIN_TARGET" ]; then
+        # BIN_TARGET is a directory - link into it
+        name=$(basename "$BIN_SOURCE")
+        target="$BIN_TARGET/$name"
+        link_or_backup "$BIN_SOURCE" "$target"
+    else
+        # BIN_TARGET is a file path - link directly
+        link_or_backup "$BIN_SOURCE" "$BIN_TARGET"
+    fi
+fi
+
+# gnome/nautilus integration
+if command -v gio >/dev/null 2>&1; then
+    if [ -n "$ICON" ] && [ -e "$ICON" ]; then
+        _icon_uri="file://$(readlink -f -- "$ICON")"
+        gio set -t string "$PORTABLE_ROOT" metadata::custom-icon "$_icon_uri"
+        [ -n "$DAT_TARGET" ] && gio set -t string "$DAT_TARGET" metadata::custom-icon "$_icon_uri"
+    else
+        gio set -t unset "$PORTABLE_ROOT" metadata::custom-icon 2>/dev/null
+        [ -n "$DAT_TARGET" ] && gio set -t unset "$DAT_TARGET" metadata::custom-icon 2>/dev/null
+    fi
+fi
+
+# Run the application
+if [ -n "$PKG" ] && command -v "$PKG" >/dev/null 2>&1; then
+    nohup "$PKG" >/dev/null 2>&1 &
+fi
+
+# Kill the terminal if KILL_TERMINAL is yes and the runner was started from one
+if [ "$KILL_TERMINAL" = "yes" ] && [ -t 0 ]; then
+    kill -TERM "$PPID"
+fi
