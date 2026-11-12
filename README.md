@@ -145,10 +145,16 @@ redirect <portable> <host> <method>
 | `link` | host → portable | nothing | default; the app accepts symlinks |
 | `link-out` | portable → host | nothing | the folder should reference host data |
 | `env` | none | the app respects the variable | XDG-aware apps and app-specific variables |
+| `copy` | portable → host | nothing | a one-time snapshot; no link |
+| `copy-sync` | both, at launch | `rsync` | the app refuses links and approximate sync is acceptable |
 | `bind` | either | root + lifecycle | the app replaces symlinks; last resort |
 | `none` | none | nothing | leave the host path alone |
 
 `link` is the default. `env` is the clean fallback for apps that respect `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, or their own variable. `bind` is specified but not implemented: it needs a mount/unmount lifecycle and does not survive a reboot.
+
+`copy` copies the portable data to the host location once. Existing host data is backed up as `.bak` first. After that the two copies are independent: later changes on either side are not reconciled. Use it for a fixed configuration, an import, or an app that refuses links but does not need to write back.
+
+`copy-sync` is the two-way hack. At launch it rsyncs host changes back into the portable folder, then copies the portable folder to the host before the app starts. It is approximate, can be outdated, does not resolve conflicts, and does not delete by default. It is the least reliable method; use it only when `link` and `env` do not work.
 
 Binaries have their own modes: `in` (portable links to host binaries), `out` (real binaries in the folder, links on the host), `copy` (real binaries, no host links), and host mode (no `bin/`, run from `PATH`). Host-provided is the default and the recommended mode; folder-owned is opt-in.
 
@@ -222,6 +228,7 @@ The target engine enforces these rules. The reference template implements an ear
 | Binary link-out | implemented |
 | Binary link-in | specified |
 | `env` and `link-out` data methods | specified |
+| `copy` and `copy-sync` data methods | specified |
 | Auto-detection of `bin` and `dat` | specified |
 | Package manager chain (`pkgcli` > `pkcon` > native) | partially implemented; search and `yay` fallback specified |
 | Flatpak profile (auto paths) | specified |

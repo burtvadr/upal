@@ -24,8 +24,12 @@ redirect <portable> <host> <method>
 | `link` | host → portable | nothing | default; the app may replace symlinks |
 | `link-out` | portable → host | nothing | reference mode, not portable |
 | `env` | none | the app respects the variable | per-process, reversible |
+| `copy` | portable → host | nothing | one-time snapshot; no link |
+| `copy-sync` | both, at launch | `rsync` | approximate two-way sync; least reliable |
 | `bind` | either | root + lifecycle | last resort |
 | `none` | none | nothing | explicit opt-out |
+
+`copy` is a one-time snapshot. `copy-sync` is the two-way hack: host changes are rsynced back into the folder at launch, then the folder is copied to the host before the app starts. It does not resolve conflicts and does not propagate deletions; it is the last resort after `link` and `env`.
 
 Binaries use the same idea with a different unit: a command name, a source directory, and a target directory. `BIN_MODE` decides whether the folder owns the binaries or only links to the host's.
 
@@ -205,7 +209,7 @@ It is the last resort for applications that replace symlinks. Document it, imple
 
 1. Freeze the contract in this repository.
 2. Harden the POSIX engine: safety, dry-run, tests.
-3. Add `env`, `link-out`, auto-detection, and the backend adapters.
+3. Add `env`, `link-out`, `copy`, `copy-sync`, auto-detection, and the backend adapters.
 4. Port the proof-of-concept runners and add hooks to the template updater.
 5. Add XDG mapping, Flatpak, Snap, Nix, Homebrew, and the search fallback.
 6. Build the GTK discovery tool on `strace`/`ptrace`.

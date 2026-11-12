@@ -4,7 +4,7 @@ The runner is one file. The header at the top is the configuration; the rest is 
 
 Data is the primary use case. Binaries are replaceable; the data mapping is the part that must survive. Host-provided binaries are the default, and folder-owned binaries are opt-in.
 
-> The reference template (`posix_variables`) implements the `link`, binary `out`, and icon subset today. The `env`, `link-out`, `bind`, and bin/dat auto-detection rules below are the target contract.
+> The reference template (`posix_variables`) implements the `link`, binary `out`, and icon subset today. The `env`, `link-out`, `copy`, `copy-sync`, `bind`, and bin/dat auto-detection rules below are the target contract.
 
 ## Header
 
@@ -56,7 +56,7 @@ KILL_TERMINAL="yes"
 | `BIN_NAMES` | `""` | Commands to check, link, and run. Empty means the words in `PKG`, or the runner filename. |
 | `DAT_SOURCE` | `""` | Portable data directory. Empty means detect; if `DAT_TARGET` is set, defaults to `$PORTABLE_ROOT/dat`. |
 | `DAT_TARGET` | `""` | Host data path. Empty means XDG mapping when the data directory is XDG-shaped, otherwise no redirection. |
-| `DAT_METHOD` | `link` | `link`, `link-out`, `env`, `bind`, or `none`. |
+| `DAT_METHOD` | `link` | `link`, `link-out`, `env`, `copy`, `copy-sync`, `bind`, or `none`. |
 | `DAT_ENV` | `XDG_CONFIG_HOME` | Variable exported for the `env` method. |
 | `BACKUP` | `yes` | Before replacing an existing host path, keep it as `<path>.bak`, then `.bak.1`, `.bak.2`. `no` aborts on conflict. |
 | `BIN_MODE` | `auto` | `auto`, `in`, `out`, or `copy`. |
@@ -149,6 +149,31 @@ DAT_ENV="GIMP2_DIRECTORY"
 ```
 
 For more than one variable, use the `app_env` hook.
+
+### `copy`
+
+Copies the portable path to the host path once.
+
+```sh
+DAT_SOURCE="$PORTABLE_ROOT/dat/GIMP"
+DAT_TARGET="$HOME/.config/GIMP"
+DAT_METHOD="copy"
+```
+
+Existing host data is backed up as `<path>.bak` first. After the copy the two paths are independent: later changes in the folder or on the host are not reconciled. Use it when the configuration is already correct and you want a one-time snapshot, or when the app refuses links but does not need to write back.
+
+### `copy-sync`
+
+Copies in both directions at launch. Requires `rsync`.
+
+At every launch:
+
+1. If the host path is missing, copy the portable path to it.
+2. Sync the host path back into the portable path with `rsync -a --update` to capture changes from the last run. Newer portable files are left alone. No files are deleted.
+3. Copy the portable path to the host path with `rsync -a` so the app sees the current folder.
+4. Launch the app.
+
+This is a rough approximation, not a live sync. Conflicts are last-writer-wins, changes made while the folder is elsewhere can be missed, deletions are not propagated, and a running app can leave the host copy ahead. It is the least reliable method, a hack for apps that refuse symlinks and cannot use `env`.
 
 ### `bind`
 
