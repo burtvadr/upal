@@ -72,7 +72,7 @@ KILL_TERMINAL="yes"
 | `DESKTOP_FILE_NAME` | `""` | Optional filter. Empty means all `*.desktop` files in the source. |
 | `DESKTOP_REWRITE_EXEC` | `yes` | Rewrite `Exec=` to the runner. Set `no` when the desktop files launch different tools from the same folder. |
 | `ENTRIES` | `""` | Optional multi-entry list: `name\|bindir\|executable\|desktop\|icon\|icon_id` per line. |
-| `DEFAULT_ENTRY` | `""` | Entry launched when no name is given. Empty means the first entry; `ask` shows a chooser when a graphical session is available. |
+| `DEFAULT_ENTRY` | `""` | Entry launched when no name is given. Empty means the first entry. |
 | `DESKTOP_INTEGRATION` | `yes` | Link and rewrite desktop files. |
 | `ICON_SOURCE` | `$PORTABLE_ROOT` | Where to find the icon. |
 | `ICON_NAME` | `""` | Icon filename. Empty means the first image found in `ICON_SOURCE`. |
@@ -381,7 +381,7 @@ If `BIN_SOURCE` contains only subdirectories, the runner treats each subdirector
 - `myapp_stable.desktop` at the portable root, or `bin/stable/myapp.desktop`;
 - `bin/stable/myapp.svg`, or `myapp.svg` at the portable root.
 
-The header stays the normal one; no list is needed. `DEFAULT_ENTRY` selects the default; otherwise the first entry. Set `DEFAULT_ENTRY="ask"` to choose at launch.
+The header stays the normal one; no list is needed. `DEFAULT_ENTRY` selects the default; otherwise the first entry.
 
 For a layout that does not follow the convention, set `ENTRIES` explicitly, one line per entry:
 

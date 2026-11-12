@@ -543,25 +543,6 @@ if [ -n "$MAN" ] && [ -d "$MAN" ]; then
     done
 fi
 
-# Zenity chooser for DEFAULT_ENTRY="ask"
-choose_entry() {
-    set -- --title="${NAME:-$PKG}" \
-        --text="Choose which ${NAME:-$PKG} to launch" \
-        --column="Entry" --column="Details" \
-        --print-column=1 \
-        --width=420 --height=280 \
-        --ok-label="Launch" --cancel-label="Cancel"
-    while IFS='|' read -r _n _b _e _d _i _id; do
-        [ -n "$_n" ] || continue
-        _detail=$_b
-        [ -n "$_d" ] && _detail=$_d
-        set -- "$@" "$_n" "$_detail"
-    done <<EOF
-$ENTRIES
-EOF
-    zenity --list "$@"
-}
-
 # Launch
 if [ -n "$ENTRIES" ]; then
     _want=${1:-}
@@ -595,25 +576,6 @@ EOF
 
     if [ "$_sel" = "1" ]; then
         shift
-    elif [ "$DEFAULT_ENTRY" = "ask" ]; then
-        command -v zenity >/dev/null 2>&1 || {
-            printf '%s\n' 'DEFAULT_ENTRY="ask" requires zenity' >&2
-            exit 1
-        }
-        _pick=$(choose_entry) || exit 0
-        _found=0
-        while IFS='|' read -r _name _bindir _exec _desktop _icon _icon_id; do
-            [ -n "$_name" ] || continue
-            if [ "$_name" = "$_pick" ]; then
-                _sel_bindir=$_bindir
-                _sel_exec=$_exec
-                _found=1
-                break
-            fi
-        done <<EOF
-$ENTRIES
-EOF
-        [ "$_found" = "1" ] || exit 1
     elif [ -n "$_default_bindir" ]; then
         _sel_bindir=$_default_bindir
         _sel_exec=$_default_exec
