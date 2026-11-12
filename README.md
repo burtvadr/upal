@@ -197,6 +197,10 @@ The same folder can wrap a stack that is not a single binary. Immich is a Docker
 
 The runner does not learn Docker. `app_install` and `app_run` are hooks for backends and stacks whose install or launch is not a package command.
 
+## Packaging (future)
+
+A portable folder can be zipped into one file for transport. The archive is a plain ZIP, not an APK: no installer, no signing requirement, no auto-run. Unzip it, click the runner. AppManager interoperability is a possible opt-in integration, only if both projects are ready. See [packaging.md](docs/packaging.md).
+
 ## Safety
 
 The target engine enforces these rules. The reference template implements an earlier subset and does not yet meet all of them.
@@ -225,6 +229,7 @@ The target engine enforces these rules. The reference template implements an ear
 | Icon auto-detect and reset | implemented |
 | Discovery GUI (`strace`/`ptrace`) | planned |
 | Nautilus directory activation (opt-in bundles) | planned |
+| Portable ZIP archive and AppManager interoperability | idea |
 | `.bak` before replacing host data | implemented |
 | `app_install` / `app_run` hooks, non-app stacks | specified |
 | `bind` method | deferred |
@@ -239,6 +244,7 @@ The reference implementation is `posix_variables`. The full target contract is i
 - [Configuration reference](docs/configuration.md) — every header variable, method, and detection rule.
 - [Design](docs/design.md) — architecture, the single-file rule, platforms, non-goals.
 - [Nautilus bundles](docs/nautilus.md) — the opt-in directory activation plan and implementation routes.
+- [Packaging](docs/packaging.md) — ZIP transport, safe unpacking, and the AppManager idea.
 - [Examples](docs/examples.md) — GIMP, Firefox, adb, Immich, minimal, self-contained.
 
 ## Non-goals

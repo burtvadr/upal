@@ -149,6 +149,12 @@ Implementation route: patch Nautilus, not an extension. Trace directory activati
 
 See [nautilus.md](nautilus.md) for the manifest, security rules, routes, and source investigation notes.
 
+## Portable archives
+
+A folder can be transported as a plain ZIP. The archive is not an APK, not an installer, and not signed; it is a snapshot. The runner remains the only manager. A future unpack helper rejects zip-slip and symlink escapes, preserves the executable bit, and never runs anything after extraction.
+
+AppManager interoperability is a possible opt-in adapter, not a dependency. See [packaging.md](packaging.md).
+
 ## POSIX first
 
 The shell engine is the reference for three reasons:
@@ -204,5 +210,6 @@ It is the last resort for applications that replace symlinks. Document it, imple
 5. Add XDG mapping, Flatpak, Snap, Nix, Homebrew, and the search fallback.
 6. Build the GTK discovery tool on `strace`/`ptrace`.
 7. Prototype Nautilus directory activation in a fork, then propose it upstream.
-8. Build the Rust engine against the same fixtures.
-9. Add Windows support as a native binary.
+8. Define the ZIP archive and safe unpacking; talk to AppManager only after both projects are ready.
+9. Build the Rust engine against the same fixtures.
+10. Add Windows support as a native binary.
