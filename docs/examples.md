@@ -204,6 +204,7 @@ DAT_SOURCE="$PORTABLE_ROOT/dat"
 DAT_TARGET="$HOME/.android"
 DAT_METHOD="link"
 DESKTOP_FILE_NAME=""
+DESKTOP_REWRITE_EXEC="no"
 ICON_NAME="scrcpy.svg"
 NAME="adb, fastboot, heimdall and scrcpy"
 
@@ -222,7 +223,7 @@ app_post_link() {
 
 Man-page linking writes to `/usr/share/man`, so the first run stops and asks for a rerun with sudo. Set `MAN=""` if you do not want that.
 
-The `app_pre_link` hook stops a running adb server before the data link changes. The `app_post_link` hook gives `sndcpy.desktop` its own icon.
+The `app_pre_link` hook stops a running adb server before the data link changes. The `app_post_link` hook gives `sndcpy.desktop` its own icon. `DESKTOP_REWRITE_EXEC="no"` keeps the original `Exec=` lines, so each entry launches its own tool instead of the runner.
 
 If you prefer distro packages, drop `bin/`, set `BIN_MODE="auto"`, and keep the same `dat/` mapping. The data does not change with the binary source.
 

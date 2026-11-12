@@ -32,6 +32,7 @@ BIN_TARGET=""
 DESKTOP_FILE_SOURCE="$PORTABLE_ROOT"
 DESKTOP_FILE_TARGET="$HOME/.local/share/applications"
 DESKTOP_FILE_NAME=""
+DESKTOP_REWRITE_EXEC="yes"
 DESKTOP_INTEGRATION="yes"
 ICON_SOURCE="$PORTABLE_ROOT"
 ICON_NAME=""
@@ -67,6 +68,7 @@ KILL_TERMINAL="yes"
 | `DESKTOP_FILE_SOURCE` | `$PORTABLE_ROOT` | Where to find `*.desktop` files. |
 | `DESKTOP_FILE_TARGET` | `$HOME/.local/share/applications` | Where to link them. |
 | `DESKTOP_FILE_NAME` | `""` | Optional filter. Empty means all `*.desktop` files in the source. |
+| `DESKTOP_REWRITE_EXEC` | `yes` | Rewrite `Exec=` to the runner. Set `no` when the desktop files launch different tools from the same folder. |
 | `DESKTOP_INTEGRATION` | `yes` | Link and rewrite desktop files. |
 | `ICON_SOURCE` | `$PORTABLE_ROOT` | Where to find the icon. |
 | `ICON_NAME` | `""` | Icon filename. Empty means the first image found in `ICON_SOURCE`. |
@@ -366,6 +368,10 @@ app_run() {
 - `app_install` replaces the backend install step. Use it for stacks and adapters.
 - `app_run` replaces the default launch. It receives the original arguments; use it for container stacks such as Immich.
 - `redirect <portable> <host> <method>` is available to hooks for extra paths, such as Heroic's `~/Games`. The header stays one mapping per role; the hook handles the exceptions.
+
+## Desktop entries
+
+The runner links every `*.desktop` file from `DESKTOP_FILE_SOURCE` into `~/.local/share/applications` and rewrites `Exec=` to the runner when `DESKTOP_REWRITE_EXEC="yes"` (the default). Standard field codes (`%U`, `%F`, `%u`, `%f`) are kept; other host-specific arguments are dropped. Set `DESKTOP_REWRITE_EXEC="no"` when the folder holds a suite and each entry launches a different tool, as in the adb example. `DESKTOP_FILE_NAME` limits which entry gets the icon rewrite, not which entries are linked.
 
 ## Icons
 

@@ -2,7 +2,8 @@
 # POSIX generic portable application script
 
 # Directory where this script lives
-PORTABLE_ROOT=$(cd -P -- "$(dirname -- "$0")" && command pwd -P)
+SELF=$(readlink -f -- "$0" 2>/dev/null) || SELF=$0
+PORTABLE_ROOT=$(cd -P -- "$(dirname -- "$SELF")" && command pwd -P)
 
 # Keep user paths and ownership when run through sudo, doas, or another escalator
 ORIG_USER=${SUDO_USER:-${DOAS_USER:-}}
@@ -39,6 +40,7 @@ BIN_TARGET=""
 DESKTOP_FILE_NAME=""
 DESKTOP_FILE_SOURCE="$PORTABLE_ROOT"
 DESKTOP_FILE_TARGET="$HOME/.local/share/applications"
+DESKTOP_REWRITE_EXEC="yes"
 ICON_NAME=""
 ICON_ID=""
 ICON_SOURCE="$PORTABLE_ROOT"
@@ -194,6 +196,11 @@ if [ -d "$DESKTOP_FILE_SOURCE" ]; then
 
     for file in "$DESKTOP_FILE_SOURCE"/*.desktop; do
         [ -e "$file" ] || continue
+        if [ "$DESKTOP_REWRITE_EXEC" = "yes" ]; then
+            _fields=$(awk -F'[[:space:]]+' '/^Exec=/ { for (i=1; i<=NF; i++) if ($i ~ /^%[fFuUdDnNickvm]$/) printf "%s ", $i }' "$file")
+            _runner_escaped=$(printf '%s\n' "$SELF" | sed 's/[\\&|]/\\&/g')
+            sed_in_place "$file" "s|^Exec=.*|Exec=\"$_runner_escaped\"${_fields:+ $_fields}|"
+        fi
         ln -sfn "$file" "$DESKTOP_FILE_TARGET" || need_root "link $file"
         own "$DESKTOP_FILE_TARGET/$(basename "$file")"
     done
