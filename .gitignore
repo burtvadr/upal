@@ -1,0 +1,9 @@
+# Proof-of-concept binaries and generated state
+proof of concepts/*/bin/
+proof of concepts/*/dat/
+
+# Editor and OS noise
+*.bak
+*.log
+*.tmp
+.DS_Store

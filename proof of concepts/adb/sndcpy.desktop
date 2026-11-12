@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Icon=/home/user/upal/pocs/adb/sndcpy.svg
+Name=sndcpy
+Name[en]=sndcpy
+Name[en_US]=sndcpy
+Name[en_US.UTF-8]=sndcpy
+Exec=sh -c 'PID="$XDG_RUNTIME_DIR/sndcpy.pid"; if [ -f "$PID" ] && kill -0 "$(cat "$PID")" 2>/dev/null; then kill "$(cat "$PID")"; rm -f "$PID"; else setsid scrcpy --no-video --audio-source=output -s adb-0084066262-UZd6ID._adb-tls-connect._tcp --no-window >/dev/null 2>&1 & echo $! > "$PID"; fi'
+PrefersNonDefaultGPU=false
+Hidden=false
+NoDisplay=false
+StartupNotify=false
+StartupWMClass=sndcpy
+Terminal=false
+

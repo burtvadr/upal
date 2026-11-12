@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Icon=/home/user/upal/pocs/adb/scrcpy.svg
+Name=scrcpy
+Name[en]=scrcpy
+Name[en_US]=scrcpy
+Name[en_US.UTF-8]=scrcpy
+Exec=sh /SSDpkg/packages/adb/stuff/protected.sh
+PrefersNonDefaultGPU=false
+Hidden=false
+NoDisplay=false
+StartupNotify=false
+StartupWMClass=scrcpy
+Terminal=false
+

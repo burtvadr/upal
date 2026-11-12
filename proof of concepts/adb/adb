@@ -1,0 +1,160 @@
+#!/bin/sh
+# POSIX generic portable application script
+
+# Directory where this script lives
+PORTABLE_ROOT=$(cd -P -- "$(dirname -- "$0")" && command pwd -P)
+
+# Variables
+PACKAGE_MANAGER="distro"
+PKG="adb fastboot heimdall scrcpy"
+DAT_SOURCE="$PORTABLE_ROOT/dat"
+DAT_TARGET="$HOME/.android" 
+BIN_SOURCE="$PORTABLE_ROOT/bin"
+BIN_TARGET=""
+DESKTOP_FILE_SOURCE="$PORTABLE_ROOT"
+DESKTOP_FILE_TARGET="$HOME/.local/share/applications"
+DESKTOP_FILE_NAME="scrcpy.desktop"
+ICON_SOURCE="$PORTABLE_ROOT"
+ICON_TARGET=""
+ICON_NAME="scrcpy.svg"
+NAME="adb, fastboot, heimdall and scrcpy"
+CACHE_SOURCE="" 
+CACHE_TARGET="" 
+MAN="$BIN_SOURCE"
+
+# Check whether any target path is on a filesystem without POSIX permission support
+paths="
+$DAT_SOURCE
+$BIN_SOURCE
+$DESKTOP_FILE_SOURCE
+$ICON_SOURCE
+$CACHE_SOURCE
+$MAN
+"
+
+printf '%s\n' "$paths" | while IFS= read -r path; do
+    [ -z "$path" ] && continue
+
+    fstype=$(findmnt -n -o FSTYPE -T "$path" 2>/dev/null) || continue
+
+    case "$fstype" in
+        ntfs|ntfs3|fuseblk|vfat|msdos|exfat)
+            notify-send "Warning" "'$path' is on a $fstype filesystem."
+            kill -TERM "$PPID"
+            ;;
+    esac
+done
+
+# adb specific stuff
+adb kill-server
+
+# Resolve sndcpy desktop files icons
+for file in "$DESKTOP_FILE_SOURCE"/sndcpy.desktop; do
+    sed -i "s|^Icon=.*|Icon=${ICON_SOURCE}/sndcpy.svg|" "$file"
+done
+
+# man linking
+for src in "$MAN"/*.1; do
+    [ -e "$src" ] || continue   # in case no .1 files exist
+
+    dst="/usr/share/man/man1/$(basename "$src")"
+
+    if [ ! -e "$dst" ] || ! [ "$src" -ef "$dst" ]; then
+        sudo ln -sfn "$src" "$dst"
+    fi
+done
+
+# Link all .desktop files
+mkdir -p "$DESKTOP_FILE_TARGET"
+
+for file in "$DESKTOP_FILE_SOURCE"/*.desktop; do
+    ln -sfn "$file" "$DESKTOP_FILE_TARGET"
+done
+
+# resolve desktop file icons
+for file in "$DESKTOP_FILE_SOURCE"/"$DESKTOP_FILE_NAME"; do
+    sed -i "s|^Icon=.*|Icon=${ICON_SOURCE}/${ICON_NAME}|" "$file"
+done
+
+# Defining BIN_TARGET
+in_path() {
+    case ":$PATH:" in
+        *":$1:"*) return 0 ;;
+        *)        return 1 ;;
+    esac
+}
+
+for d in "$HOME/.local/bin" "$HOME/bin" "/usr/local/bin" "/usr/bin"; do
+    if in_path "$d"; then
+        BIN_TARGET=$d
+        break
+    fi
+done
+
+# Fail early if nothing in PATH matches
+[ -n "${BIN_TARGET:-}" ] || {
+    printf '%s\n' "no PATH directory found among candidates" >&2
+    exit 1
+}
+
+# link_or_backup <source> <target>
+# Symlink target → source. Backs up anything that would be overwritten.
+# If target is a symlink resolving to the same inode as source, it's left as-is.
+link_or_backup() {
+    _src=$1
+    _tgt=$2
+    _i
+
+    [ -e "$_src" ] || return 1
+
+    # Target doesn't exist - just link
+    if [ ! -e "$_tgt" ] && [ ! -L "$_tgt" ]; then
+        ln -sfn "$_src" "$_tgt" || sudo ln -sfn "$_src" "$_tgt"
+        return 0
+    fi
+
+    # Target is a symlink that resolves to the same inode - no-op
+    if [ -L "$_tgt" ] && [ "$_tgt" -ef "$_src" ]; then
+        return 0
+    fi
+
+    # Target is a broken symlink - remove and link
+    if [ -L "$_tgt" ] && [ ! -e "$_tgt" ]; then
+        rm "$_tgt"
+        ln -sfn "$_src" "$_tgt" || sudo ln -sfn "$_src" "$_tgt"
+        return 0
+    fi
+
+    # Target exists (directory, file, or symlink pointing elsewhere) - back up and link
+    _i=1
+    while [ -e "${_tgt}${_i}" ] || [ -L "${_tgt}${_i}" ]; do _i=$((_i+1)); done
+    mv "$_tgt" "${_tgt}${_i}"
+    ln -sfn "$_src" "$_tgt" || sudo ln -sfn "$_src" "$_tgt"
+    return 0
+}
+
+# Link DAT_SOURCE to DAT_TARGET
+link_or_backup "$DAT_SOURCE" "$DAT_TARGET"
+
+# Link all executables from BIN_SOURCE to BIN_TARGET
+if [ -d "$BIN_SOURCE" ]; then
+    mkdir -p "$BIN_TARGET"
+    for f in "$BIN_SOURCE"/*; do
+        [ -e "$f" ] || continue
+        [ -x "$f" ] || continue
+
+        name=$(basename "$f")
+        target="$BIN_TARGET/$name"
+
+        if [ ! -e "$target" ] || ! [ "$f" -ef "$target" ]; then
+            ln -sfn "$f" "$target" 2>/dev/null || sudo ln -sfn "$f" "$target"
+        fi
+    done
+fi
+
+#gnome/nautlus integration
+gio set -t string "$PORTABLE_ROOT" metadata::custom-icon "file://$(readlink -f "$ICON_SOURCE"/"$ICON_NAME")"
+gio set -t string "$DAT_TARGET" metadata::custom-icon "file://$(readlink -f "$ICON_SOURCE"/"$ICON_NAME")"
+
+sleep 1
+kill -TERM "$PPID"

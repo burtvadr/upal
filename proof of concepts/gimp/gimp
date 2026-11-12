@@ -1,0 +1,233 @@
+#!/bin/sh
+# POSIX generic portable application script
+
+# Directory where this script lives
+PORTABLE_ROOT=$(cd -P -- "$(dirname -- "$0")" && command pwd -P)
+
+# Variables
+PACKAGE_MANAGER="distro"
+PKG="gimp"
+NAME="gimp"
+DAT_SOURCE="$PORTABLE_ROOT/dat"
+DAT_TARGET="$HOME/.config/GIMP"
+BIN_SOURCE="$PORTABLE_ROOT/bin"
+BIN_TARGET="/usr/bin"
+DESKTOP_FILE_NAME="gimp.desktop"
+DESKTOP_FILE_SOURCE="$PORTABLE_ROOT"
+DESKTOP_FILE_TARGET="$HOME/.local/share/applications"
+ICON_NAME="$PKG.svg"
+ICON_SOURCE="$PORTABLE_ROOT"
+ICON_TARGET="$HOME/.local/share/icons/hicolor/scalable/apps/$ICON_NAME"
+ICON="$ICON_SOURCE/$ICON_NAME"
+CACHE_SOURCE="" 
+CACHE_TARGET="" 
+MAN="$BIN_SOURCE"
+KILL_TERMINAL="yes"
+
+# Check whether any target path is on a filesystem without POSIX permission support
+paths="
+$DAT_SOURCE
+$BIN_SOURCE
+$DESKTOP_FILE_SOURCE
+$ICON_SOURCE
+$CACHE_SOURCE
+$MAN
+"
+
+# Language-based directory name assumptions
+LANG_INFERRING_BIN="bin binary binaries binarios executables executável executáveis executaveis executavel"
+LANG_INFERRING_DATA="dat data dados config user"
+
+# Check whether any target path is on a filesystem without POSIX permission support
+printf '%s\n' "$paths" | while IFS= read -r path; do
+    [ -z "$path" ] && continue
+
+    fstype=$(findmnt -n -o FSTYPE -T "$path" 2>/dev/null) || continue
+
+    case "$fstype" in
+        ntfs|ntfs3|fuseblk|vfat|msdos|exfat)
+            notify-send "Warning" "'$path' is on a $fstype filesystem."
+            kill -TERM "$PPID"
+            ;;
+    esac
+done
+
+# Install the package if not already installed
+# PACKAGE_MANAGER: "auto" tries pkgcli > pkcon > distro; "distro" uses only the distro package manager
+if [ -n "$PKG" ]; then
+    if command -v "$PKG" >/dev/null 2>&1; then
+        : # already installed
+    elif [ "$PACKAGE_MANAGER" = "auto" ] && command -v pkgcli >/dev/null 2>&1; then
+        pkgcli install "$PKG"
+    elif [ "$PACKAGE_MANAGER" = "auto" ] && command -v pkcon >/dev/null 2>&1; then
+        pkcon install "$PKG"
+    elif [ "$PACKAGE_MANAGER" = "auto" ] || [ "$PACKAGE_MANAGER" = "distro" ]; then
+        . /etc/os-release
+        case "$ID" in
+            ubuntu|debian)
+                sudo apt-get update
+                sudo apt-get install -y "$PKG"
+                ;;
+            fedora)
+                sudo dnf install -y "$PKG" --skip-unavailable
+                ;;
+            arch)
+                sudo pacman -S "$PKG"
+                ;;
+            opensuse*)
+                sudo zypper install -y "$PKG"
+                ;;
+        esac
+    fi
+fi
+
+# man linking
+for src in "$MAN"/*.1; do
+    [ -e "$src" ] || continue
+
+    dst="/usr/share/man/man1/$(basename "$src")"
+
+    if [ ! -e "$dst" ] || ! [ "$src" -ef "$dst" ]; then
+        sudo ln -sfn "$src" "$dst"
+    fi
+done
+
+# Link all .desktop files
+if [ -d "$DESKTOP_FILE_SOURCE" ]; then
+    mkdir -p "$DESKTOP_FILE_TARGET"
+
+    for file in "$DESKTOP_FILE_SOURCE"/*.desktop; do
+        [ -e "$file" ] || continue
+        ln -sfn "$file" "$DESKTOP_FILE_TARGET"
+    done
+fi
+
+# resolve desktop file icons
+if [ -n "$DESKTOP_FILE_NAME" ]; then
+    for file in "$DESKTOP_FILE_SOURCE"/"$DESKTOP_FILE_NAME"; do
+        sed -i "s|^Icon=.*|Icon=${ICON_SOURCE}/${ICON_NAME}|" "$file"
+    done
+fi
+
+# Defining BIN_TARGET
+in_path() {
+    case ":$PATH:" in
+        *":$1:"*) return 0 ;;
+        *)        return 1 ;;
+    esac
+}
+
+if [ -z "$BIN_TARGET" ]; then
+    for d in "$HOME/.local/bin" "$HOME/bin" "/usr/local/bin" "/usr/bin"; do
+        if in_path "$d"; then
+            BIN_TARGET=$d
+            break
+        fi
+    done
+fi
+
+# Fail early if nothing in PATH matches
+[ -n "${BIN_TARGET:-}" ] || {
+    printf '%s\n' "no PATH directory found among candidates" >&2
+    exit 1
+}
+
+# link_or_backup <source> <target>
+# Symlink target -> source. Backs up anything that would be overwritten.
+# If target is a symlink resolving to the same inode as source, it's left as-is.
+# If source is a broken symlink, any broken symlink at target is removed.
+link_or_backup() {
+    _src=$1
+    _tgt=$2
+    _i
+
+    # Source doesn't exist at all - nothing to do
+    [ -e "$_src" ] || [ -L "$_src" ] || return 1
+
+    # Source is a broken symlink - clean up target if it's also a broken symlink
+    if [ -L "$_src" ] && [ ! -e "$_src" ]; then
+        [ -L "$_tgt" ] && [ ! -e "$_tgt" ] && rm -f "$_tgt"
+        return 0
+    fi
+
+    # Target doesn't exist - just link
+    if [ ! -e "$_tgt" ] && [ ! -L "$_tgt" ]; then
+        ln -sfn "$_src" "$_tgt" || sudo ln -sfn "$_src" "$_tgt"
+        return 0
+    fi
+
+    # Target is a symlink that resolves to the same inode - no-op
+    if [ -L "$_tgt" ] && [ "$_tgt" -ef "$_src" ]; then
+        return 0
+    fi
+
+    # Target is a broken symlink - remove and link
+    if [ -L "$_tgt" ] && [ ! -e "$_tgt" ]; then
+        rm "$_tgt"
+        ln -sfn "$_src" "$_tgt" || sudo ln -sfn "$_src" "$_tgt"
+        return 0
+    fi
+
+    # Target exists (directory, file, or symlink pointing elsewhere) - back up and link
+    _i=1
+    while [ -e "${_tgt}${_i}" ] || [ -L "${_tgt}${_i}" ]; do _i=$((_i+1)); done
+    mv "$_tgt" "${_tgt}${_i}"
+    ln -sfn "$_src" "$_tgt" || sudo ln -sfn "$_src" "$_tgt"
+    return 0
+}
+
+# Clean up broken symlinks if sources were removed
+if [ -n "$DAT_TARGET" ] && [ -L "$DAT_TARGET" ] && [ ! -e "$DAT_TARGET" ]; then
+    rm -f "$DAT_TARGET"
+fi
+
+if [ -d "$BIN_TARGET" ]; then
+    for link in "$BIN_TARGET"/*; do
+        [ -L "$link" ] && [ ! -e "$link" ] && rm -f "$link"
+    done
+fi
+
+# Link DAT_SOURCE to DAT_TARGET
+if [ -n "$DAT_TARGET" ]; then
+    link_or_backup "$DAT_SOURCE" "$DAT_TARGET"
+fi
+
+# Link binaries from BIN_SOURCE to BIN_TARGET
+# BIN_SOURCE can be a directory or a single file
+# BIN_TARGET can be a directory or a single file path
+if [ -d "$BIN_SOURCE" ]; then
+    # BIN_SOURCE is a directory - link all executables
+    mkdir -p "$BIN_TARGET"
+    for f in "$BIN_SOURCE"/*; do
+        [ -e "$f" ] || [ -L "$f" ] || continue
+        [ -x "$f" ] || continue
+        name=$(basename "$f")
+        target="$BIN_TARGET/$name"
+        link_or_backup "$f" "$target"
+    done
+elif [ -f "$BIN_SOURCE" ] || [ -L "$BIN_SOURCE" ]; then
+    # BIN_SOURCE is a single file
+    if [ -d "$BIN_TARGET" ]; then
+        # BIN_TARGET is a directory - link into it
+        name=$(basename "$BIN_SOURCE")
+        target="$BIN_TARGET/$name"
+        link_or_backup "$BIN_SOURCE" "$target"
+    else
+        # BIN_TARGET is a file path - link directly
+        link_or_backup "$BIN_SOURCE" "$BIN_TARGET"
+    fi
+fi
+
+# gnome/nautilus integration
+if [ -e "$ICON" ]; then
+    gio set -t string "$PORTABLE_ROOT" metadata::custom-icon "file://$(readlink -f "$ICON")"
+    [ -n "$DAT_TARGET" ] && gio set -t string "$DAT_TARGET" metadata::custom-icon "file://$(readlink -f "$ICON")"
+fi
+
+# Run the application
+if [ -n "$PKG" ] && command -v "$PKG" >/dev/null 2>&1; then
+    $PKG
+fi
+
+# Kill the terminal if KILL_TERMINAL is yes
+[ "$KILL_TERMINAL" = "yes" ] & kill -TERM "$PPID"
