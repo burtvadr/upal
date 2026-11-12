@@ -2,7 +2,7 @@
 
 ## One file
 
-UPAL has one hard rule: a portable application is managed by exactly one file. That file contains the configuration, the engine, and the entry point. There is no sidecar config, no second binary, no hidden directory.
+UPAL has one hard rule: a portable application is managed by exactly one file. That file contains the configuration, the engine, and the entry point. There is no sidecar config for the manager, no second binary, no hidden state.
 
 Two implementations are allowed:
 
@@ -115,6 +115,40 @@ Any image in the portable root, or in `ICON_SOURCE`, becomes the desktop and fol
 
 The icon is not copied into a theme by default. The desktop entry points at the absolute path, and `gio` sets `metadata::custom-icon` on the folder and on the data target. Deleting the image is the reset: the next run unsets the folder metadata and falls back to the package or application name in the desktop entry. No state file records the previous icon, so the folder can be moved without breaking the reset.
 
+## Nautilus application bundles
+
+The long-term interaction is a double-clickable folder, like a macOS bundle. Nautilus currently always browses a directory, and the public extension API has no hook for replacing activation. This is therefore a Nautilus patch, not a plugin.
+
+The behavior is opt-in: only a directory with an explicit manifest is an application bundle. Normal directories keep opening normally. A global Nautilus preference controls the feature. The default is ask: the first launch of a bundle shows a confirmation. Bundles from a downloaded or extracted location always confirm, even when the preference allows local bundles.
+
+```text
+MyApp/
+├── runner
+├── application.json
+├── icon.svg
+└── dat/
+```
+
+```json
+{
+  "type": "application",
+  "entry": "runner"
+}
+```
+
+The manifest is optional desktop integration, like the icon and `.desktop` file. It is not a second manager; `runner` remains the only file that manages the app. The manifest name is provisional; `application.json` is the current proposal.
+
+Rules:
+
+- A valid manifest is required; a directory containing `run.sh` is not enough.
+- `entry` must be a relative path inside the bundle. Reject absolute paths, `..`, and symlinks that escape the root.
+- Downloaded or extracted bundles require confirmation before the first launch.
+- An invalid manifest falls back to opening the directory and reports the error.
+
+Implementation route: patch Nautilus, not an extension. Trace directory activation through `nautilus-files-view.c` and `nautilus-mime-actions.c`, build a minimal proof of concept in a fork, then discuss upstream. A generic activation-provider extension API is a later, larger project.
+
+See [nautilus.md](nautilus.md) for the manifest, security rules, routes, and source investigation notes.
+
 ## POSIX first
 
 The shell engine is the reference for three reasons:
@@ -133,7 +167,7 @@ The single-file rule shapes the design:
 
 - The Rust binary embeds the engine and the per-application configuration. A small build step can produce a per-app runner from the same header, and the result is one executable.
 - Runtime detection and environment overrides cover the zero-config case.
-- A sidecar config file is not allowed.
+- A sidecar config file for the runner is not allowed. The optional Nautilus manifest is desktop integration, not runner configuration.
 
 On Windows:
 
@@ -143,7 +177,7 @@ On Windows:
 - The registry is not emulated. Applications that store state only in the registry are out of scope.
 - The portable folder layout stays the same: runner, optional `bin`, optional `dat`, optional icon and desktop entry.
 
-macOS is not a target. A `.app` is a metadata-driven bundle, which conflicts with the no-metadata rule. The existing Linux tools (`findmnt`, `gio`, `notify-send`, `/etc/os-release`) also have no direct equivalent there.
+macOS is not a target. The Linux equivalent of a bundle is the opt-in Nautilus directory above, not a macOS `.app`. The existing Linux tools (`findmnt`, `gio`, `notify-send`, `/etc/os-release`) also have no direct equivalent there.
 
 ## Bind mounts
 
@@ -153,10 +187,10 @@ It is the last resort for applications that replace symlinks. Document it, imple
 
 ## Non-goals
 
-- macOS `.app` bundles.
+- macOS `.app` bundles as a format. The Linux equivalent is the opt-in Nautilus bundle above.
 - Windows registry emulation.
 - Data conversion between application versions or distributions. UPAL backs up; it does not migrate.
-- A config file or a daemon.
+- A config file or a daemon for the runner. The Nautilus manifest is optional desktop integration.
 - Bundling every library.
 - A GUI in the runner. The discovery tool is a separate authoring aid.
 - A package format. UPAL is a layer over the host's package manager, not a replacement.
@@ -169,5 +203,6 @@ It is the last resort for applications that replace symlinks. Document it, imple
 4. Port the proof-of-concept runners and add hooks to the template updater.
 5. Add XDG mapping, Flatpak, Snap, Nix, Homebrew, and the search fallback.
 6. Build the GTK discovery tool on `strace`/`ptrace`.
-7. Build the Rust engine against the same fixtures.
-8. Add Windows support as a native binary.
+7. Prototype Nautilus directory activation in a fork, then propose it upstream.
+8. Build the Rust engine against the same fixtures.
+9. Add Windows support as a native binary.

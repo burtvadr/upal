@@ -1,32 +1,24 @@
 # upal
 
-**Universal Portable Abstraction Layer** — one file that turns an application into a portable folder.
+**Your app and everything it remembers, in one folder.**
 
-UPAL is a portable data layer first and a launcher second. The folder owns the user data; the binaries are disposable. They can come from the host package manager, a local build, or the folder itself. Move the folder, click the runner, and the app continues where it left off.
+UPAL is a portable app folder. It keeps the app, your settings, your saves, your plugins, and the rest of your data together. Move the folder to another drive or another PC, open it, and boom: the app is there with the work you left in it.
 
-## The single-file rule
+Think of it as a mix of a macOS app bundle and a Windows portable app:
 
-One file manages the portable application. That file is the runner, the configuration, and the engine. No sidecar config, no second binary, no hidden metadata.
+- **Like a Mac app** — the folder is the app; click the runner and it opens.
+- **Like a Windows portable app** — move it anywhere; your data comes with it.
+- **Better than both** — the app itself can still come from your system package manager, so updates and security fixes keep flowing.
 
-- **POSIX shell** — the reference implementation. Editable header, no build step.
-- **Native binary** — future Rust engine. Same contract, same behavior, still one file.
+## What you get
 
-A folder with two manager files is not UPAL.
-
-> **Status:** this repository documents the full contract and ships a working reference template. The template currently implements explicit data links and binary link-out. The `env`, `link-out`, binary `in`, auto-detection, and dry-run layers are specified in the docs and are the next implementation step.
-
-## Why
-
-Most Linux packages split an application across paths the user does not control:
-
-- binaries in `/usr/bin`, `/opt`, or `/var/lib/flatpak`;
-- configuration in `~/.config`;
-- data in `~/.local/share`;
-- state in `~/.local/state`;
-- cache in `~/.cache`;
-- Flatpak data in `~/.var/app`.
-
-The result is that a backup, a move to another drive, or a copy to another machine means hunting through several directories. UPAL replaces that with one folder:
+- **One folder, not ten.** No more hunting through `~/.config`, `~/.local/share`, `~/.cache`, and `~/.var/app`.
+- **One file to manage it.** The runner is the config, the engine, and the thing you click. A second manager file is not UPAL.
+- **Move it and go.** Another disk, another machine, a backup: the data stays with the app.
+- **Keep your package manager.** Flatpak, Snap, distro packages, Nix, Homebrew, and more.
+- **Works with non-apps too.** A Docker Compose stack like Immich can live in the same kind of folder.
+- **Looks like a real app.** Add an image and a desktop entry; it gets an icon and a launcher.
+- **No lock-in.** Your data stays as ordinary files.
 
 ## Data first, binaries disposable
 
@@ -48,7 +40,8 @@ MyApp/
 ├── bin/            # optional: links to host binaries, or real binaries
 ├── dat/            # optional: portable user data
 ├── icon.svg        # optional: first image becomes the icon
-└── MyApp.desktop   # optional: desktop entry
+├── MyApp.desktop   # optional: desktop entry
+└── application.json # optional: Nautilus bundle manifest
 ```
 
 The runner resolves its own location, so the folder can be renamed or moved. The names `bin` and `dat` are defaults, not requirements: the header can point anywhere, and the engine can detect the roles by contents.
@@ -194,6 +187,10 @@ MyApp/
 
 Any image at the root, or in `ICON_SOURCE`, becomes the icon; MIME type decides, not the extension. `ICON_NAME` pins a specific file. The runner links the desktop file into `~/.local/share/applications`, rewrites `Exec=` to the runner, rewrites `Icon=` to the absolute portable path, and sets the folder icon through `gio` when available. Delete the image and the next run resets the folder icon and the desktop entry to the default. Remove the desktop file to opt out.
 
+## Nautilus bundles (planned)
+
+The goal is to double-click the folder and launch the app, like a macOS bundle. Nautilus has no public hook for replacing directory activation, so this needs a small Nautilus patch. The plan is opt-in: a directory with an explicit `application.json` manifest is an application bundle; normal directories keep opening normally; downloaded bundles need confirmation before their first launch. Prototype in a Nautilus fork, then propose it upstream.
+
 ## Non-app stacks
 
 The same folder can wrap a stack that is not a single binary. Immich is a Docker Compose project: the folder holds `docker-compose.yml`, `library/`, `postgres/`, and `run/`, and `app_run` starts it. Relative paths in the compose file mean moving the folder moves the data. One manager file remains the entry point; the helper scripts are part of the stack.
@@ -227,6 +224,7 @@ The target engine enforces these rules. The reference template implements an ear
 | Snap, Nix, Homebrew, Toolpak, pkgit, cpak adapters | specified |
 | Icon auto-detect and reset | implemented |
 | Discovery GUI (`strace`/`ptrace`) | planned |
+| Nautilus directory activation (opt-in bundles) | planned |
 | `.bak` before replacing host data | implemented |
 | `app_install` / `app_run` hooks, non-app stacks | specified |
 | `bind` method | deferred |
@@ -240,14 +238,15 @@ The reference implementation is `posix_variables`. The full target contract is i
 
 - [Configuration reference](docs/configuration.md) — every header variable, method, and detection rule.
 - [Design](docs/design.md) — architecture, the single-file rule, platforms, non-goals.
-- [Examples](docs/examples.md) — GIMP, Firefox, adb, minimal, self-contained.
+- [Nautilus bundles](docs/nautilus.md) — the opt-in directory activation plan and implementation routes.
+- [Examples](docs/examples.md) — GIMP, Firefox, adb, Immich, minimal, self-contained.
 
 ## Non-goals
 
-- macOS `.app` bundles. They are metadata-driven and conflict with the no-metadata rule; the current engine is POSIX/Linux.
+- macOS `.app` bundles as a format. The Linux equivalent is the opt-in Nautilus bundle above, not a macOS bundle.
 - Windows registry emulation. Windows support means a native binary that understands `%APPDATA%` and `%LOCALAPPDATA%`.
 - Data conversion between application versions or distributions. The user owns that decision; UPAL backs up.
-- A config file or a daemon. The runner is the config.
+- A config file or a daemon for the runner. The runner is the config; the Nautilus manifest is optional desktop integration.
 - Bundling every library. Host-provided binaries are the default; the folder owns data and identity.
 
 ## License

@@ -306,6 +306,27 @@ bin/gimp -> /usr/bin/gimp
 
 The folder contains a link to the host binary. The host package manager updates it normally. The folder remains small and legal to redistribute without the application.
 
+## Nautilus bundle (planned)
+
+Once the Nautilus patch lands, the folder itself can be the thing you double-click.
+
+```text
+MyApp/
+├── runner
+├── application.json
+├── icon.svg
+└── dat/
+```
+
+```json
+{
+  "type": "application",
+  "entry": "runner"
+}
+```
+
+The manifest is optional desktop integration, not a second manager. Normal directories keep opening normally. The first launch asks for confirmation, and downloaded bundles always require it.
+
 ## Layout rules
 
 - The runner must stay at the portable root, or be symlinked to it; it resolves its own real path.
