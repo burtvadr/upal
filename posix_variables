@@ -41,6 +41,8 @@ DESKTOP_FILE_NAME=""
 DESKTOP_FILE_SOURCE="$PORTABLE_ROOT"
 DESKTOP_FILE_TARGET="$HOME/.local/share/applications"
 DESKTOP_REWRITE_EXEC="yes"
+# Multi-entry suites: name|bindir|executable|desktop|icon|icon_id
+ENTRIES=""
 ICON_NAME=""
 ICON_ID=""
 ICON_SOURCE="$PORTABLE_ROOT"
@@ -189,38 +191,129 @@ if [ -n "$PKG" ]; then
     fi
 fi
 
-# Link all .desktop files
-if [ -d "$DESKTOP_FILE_SOURCE" ]; then
+# Desktop entries and icons
+if [ -n "$ENTRIES" ]; then
+    install_entry() {
+        _name=$1
+        _bindir=$2
+        _exec=$3
+        _desktop=$4
+        _icon=$5
+        _icon_id=$6
+
+        _icon_path=""
+        if [ -n "$_icon" ]; then
+            case "$_icon" in
+                /*) _icon_path=$_icon ;;
+                *) _icon_path="$PORTABLE_ROOT/$_icon" ;;
+            esac
+            [ -e "$_icon_path" ] || _icon_path=""
+        fi
+        if [ -z "$_icon_path" ] && [ -n "$ICON" ] && [ -e "$ICON" ]; then
+            _icon_path=$ICON
+        fi
+        if [ -z "$_icon_id" ] && [ -n "$_icon_path" ]; then
+            _icon_id=$(basename -- "$_icon_path")
+            _icon_id=${_icon_id%.*}
+        fi
+
+        _icon_value=""
+        if [ -n "$_icon_path" ] && [ -e "$_icon_path" ] && [ -n "$_icon_id" ]; then
+            if [ "$ICON_METHOD" = "none" ]; then
+                _icon_value=$_icon_path
+            else
+                _icon_ext=${_icon_path##*.}
+                case "$_icon_ext" in
+                    svg|png|xpm|jpg|jpeg) ;;
+                    *) _icon_ext=png ;;
+                esac
+                case "$(file -b --mime-type -- "$_icon_path" 2>/dev/null)" in
+                    image/svg+xml) _icon_ext=svg ;;
+                    image/png) _icon_ext=png ;;
+                esac
+                _icon_dir="256x256/apps"
+                [ "$_icon_ext" = "svg" ] && _icon_dir="scalable/apps"
+                _icon_target=$ICON_TARGET
+                [ -n "$_icon_target" ] || _icon_target="$HOME/.local/share/icons/hicolor/$_icon_dir"
+                mkdir -p "$_icon_target" || need_root "create $_icon_target"
+                own_path "$_icon_target"
+                if [ "$ICON_METHOD" = "link" ]; then
+                    ln -sfn "$_icon_path" "$_icon_target/$_icon_id.$_icon_ext" || need_root "link $_icon_target/$_icon_id.$_icon_ext"
+                else
+                    rm -f "$_icon_target/$_icon_id.$_icon_ext" || need_root "replace $_icon_target/$_icon_id.$_icon_ext"
+                    cp -f "$_icon_path" "$_icon_target/$_icon_id.$_icon_ext" || need_root "copy $_icon_path to $_icon_target"
+                fi
+                own "$_icon_target/$_icon_id.$_icon_ext"
+                _icon_value=$_icon_id
+            fi
+        fi
+
+        if [ -n "$_desktop" ]; then
+            _file=$_desktop
+            case "$_file" in
+                /*) ;;
+                *) _file="$PORTABLE_ROOT/$_file" ;;
+            esac
+            if [ -e "$_file" ]; then
+                _fields=$(awk -F'[[:space:]]+' '/^Exec=/ { for (i=1; i<=NF; i++) if ($i ~ /^%[fFuUdDnNickvm]$/) printf "%s ", $i }' "$_file")
+                _runner_escaped=$(printf '%s\n' "$SELF" | sed 's/[\\&|]/\\&/g')
+                sed_in_place "$_file" "s|^Exec=.*|Exec=\"$_runner_escaped\" $_name${_fields:+ $_fields}|"
+                sed_in_place "$_file" "/^TryExec=/d"
+                if [ -n "$_icon_value" ]; then
+                    sed_in_place "$_file" "s|^Icon=.*|Icon=$_icon_value|"
+                fi
+                ln -sfn "$_file" "$DESKTOP_FILE_TARGET" || need_root "link $_file"
+                own "$DESKTOP_FILE_TARGET/$(basename -- "$_file")"
+            fi
+        fi
+    }
+
     mkdir -p "$DESKTOP_FILE_TARGET" || need_root "create $DESKTOP_FILE_TARGET"
     own_path "$DESKTOP_FILE_TARGET"
-
-    for file in "$DESKTOP_FILE_SOURCE"/*.desktop; do
-        [ -e "$file" ] || continue
-        if [ "$DESKTOP_REWRITE_EXEC" = "yes" ]; then
-            _fields=$(awk -F'[[:space:]]+' '/^Exec=/ { for (i=1; i<=NF; i++) if ($i ~ /^%[fFuUdDnNickvm]$/) printf "%s ", $i }' "$file")
-            _runner_escaped=$(printf '%s\n' "$SELF" | sed 's/[\\&|]/\\&/g')
-            sed_in_place "$file" "s|^Exec=.*|Exec=\"$_runner_escaped\"${_fields:+ $_fields}|"
-        fi
-        ln -sfn "$file" "$DESKTOP_FILE_TARGET" || need_root "link $file"
-        own "$DESKTOP_FILE_TARGET/$(basename "$file")"
-    done
-fi
-
-# resolve desktop file icons
-if [ -n "$DESKTOP_FILE_NAME" ]; then
-    if [ -n "$ICON" ] && [ -e "$ICON" ] && [ -n "$ICON_ID" ] && [ "$ICON_METHOD" != "none" ]; then
-        _icon="$ICON_ID"
-    elif [ -n "$ICON" ] && [ -e "$ICON" ]; then
-        _icon="$ICON"
-    else
-        _icon="${NAME:-$PKG}"
+    while IFS='|' read -r _name _bindir _exec _desktop _icon _icon_id; do
+        [ -n "$_name" ] || continue
+        install_entry "$_name" "$_bindir" "$_exec" "$_desktop" "$_icon" "$_icon_id"
+    done <<EOF
+$ENTRIES
+EOF
+    if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+        gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" >/dev/null 2>&1
+        own "$HOME/.local/share/icons/hicolor/icon-theme.cache"
     fi
-    for file in "$DESKTOP_FILE_SOURCE"/"$DESKTOP_FILE_NAME"; do
-        [ -e "$file" ] || continue
-        if [ -n "$_icon" ]; then
-            sed_in_place "$file" "s|^Icon=.*|Icon=$_icon|"
+else
+    # Link all .desktop files
+    if [ -d "$DESKTOP_FILE_SOURCE" ]; then
+        mkdir -p "$DESKTOP_FILE_TARGET" || need_root "create $DESKTOP_FILE_TARGET"
+        own_path "$DESKTOP_FILE_TARGET"
+
+        for file in "$DESKTOP_FILE_SOURCE"/*.desktop; do
+            [ -e "$file" ] || continue
+            if [ "$DESKTOP_REWRITE_EXEC" = "yes" ]; then
+                _fields=$(awk -F'[[:space:]]+' '/^Exec=/ { for (i=1; i<=NF; i++) if ($i ~ /^%[fFuUdDnNickvm]$/) printf "%s ", $i }' "$file")
+                _runner_escaped=$(printf '%s\n' "$SELF" | sed 's/[\\&|]/\\&/g')
+                sed_in_place "$file" "s|^Exec=.*|Exec=\"$_runner_escaped\"${_fields:+ $_fields}|"
+            fi
+            ln -sfn "$file" "$DESKTOP_FILE_TARGET" || need_root "link $file"
+            own "$DESKTOP_FILE_TARGET/$(basename "$file")"
+        done
+    fi
+
+    # resolve desktop file icons
+    if [ -n "$DESKTOP_FILE_NAME" ]; then
+        if [ -n "$ICON" ] && [ -e "$ICON" ] && [ -n "$ICON_ID" ] && [ "$ICON_METHOD" != "none" ]; then
+            _icon="$ICON_ID"
+        elif [ -n "$ICON" ] && [ -e "$ICON" ]; then
+            _icon="$ICON"
+        else
+            _icon="${NAME:-$PKG}"
         fi
-    done
+        for file in "$DESKTOP_FILE_SOURCE"/"$DESKTOP_FILE_NAME"; do
+            [ -e "$file" ] || continue
+            if [ -n "$_icon" ]; then
+                sed_in_place "$file" "s|^Icon=.*|Icon=$_icon|"
+            fi
+        done
+    fi
 fi
 
 # Defining BIN_TARGET
@@ -351,7 +444,7 @@ elif [ -f "$BIN_SOURCE" ] || [ -L "$BIN_SOURCE" ]; then
 fi
 
 # Install the icon into the theme so desktop files can use Icon=<id>
-if [ -n "$ICON" ] && [ -e "$ICON" ] && [ -n "$ICON_ID" ] && [ "$ICON_METHOD" != "none" ]; then
+if [ -z "$ENTRIES" ] && [ -n "$ICON" ] && [ -e "$ICON" ] && [ -n "$ICON_ID" ] && [ "$ICON_METHOD" != "none" ]; then
     mkdir -p "$ICON_TARGET" || need_root "create $ICON_TARGET"
     own_path "$ICON_TARGET"
     if [ "$ICON_METHOD" = "link" ]; then
@@ -365,7 +458,7 @@ if [ -n "$ICON" ] && [ -e "$ICON" ] && [ -n "$ICON_ID" ] && [ "$ICON_METHOD" != 
         gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" >/dev/null 2>&1
         own "$HOME/.local/share/icons/hicolor/icon-theme.cache"
     fi
-elif [ "$ICON_METHOD" != "none" ] && [ -n "$ICON_ID" ] && [ -n "$ICON_TARGET" ]; then
+elif [ -z "$ENTRIES" ] && [ "$ICON_METHOD" != "none" ] && [ -n "$ICON_ID" ] && [ -n "$ICON_TARGET" ]; then
     # Source icon was removed: drop the managed theme icon too
     for _ext in svg png xpm jpg jpeg; do
         rm -f "$ICON_TARGET/$ICON_ID.$_ext" 2>/dev/null
@@ -402,8 +495,58 @@ if [ -n "$MAN" ] && [ -d "$MAN" ]; then
     done
 fi
 
-# Run the application
-if [ -n "$PKG" ] && command -v "$PKG" >/dev/null 2>&1; then
+# Launch
+if [ -n "$ENTRIES" ]; then
+    _want=${1:-}
+    _first_name=""
+    _first_bindir=""
+    _first_exec=""
+    _sel_bindir=""
+    _sel_exec=""
+    _sel=0
+    while IFS='|' read -r _name _bindir _exec _desktop _icon _icon_id; do
+        [ -n "$_name" ] || continue
+        if [ -z "$_first_name" ]; then
+            _first_name=$_name
+            _first_bindir=$_bindir
+            _first_exec=$_exec
+        fi
+        if [ -n "$_want" ] && [ "$_name" = "$_want" ]; then
+            _sel_bindir=$_bindir
+            _sel_exec=$_exec
+            _sel=1
+        fi
+    done <<EOF
+$ENTRIES
+EOF
+
+    if [ "$_sel" = "1" ]; then
+        shift
+    else
+        _sel_bindir=$_first_bindir
+        _sel_exec=$_first_exec
+    fi
+
+    if [ -n "$_sel_bindir" ]; then
+        cd "$PORTABLE_ROOT/$_sel_bindir" || exit 1
+    else
+        cd "$PORTABLE_ROOT" || exit 1
+    fi
+
+    if [ -n "$_sel_exec" ]; then
+        [ -x "./$_sel_exec" ] || {
+            printf 'Missing executable: %s\n' "$_sel_exec" >&2
+            exit 1
+        }
+        exec "./$_sel_exec" "$@"
+    elif command -v app_run >/dev/null 2>&1; then
+        app_run "$@"
+        exit $?
+    else
+        printf 'No executable for entry: %s\n' "${_want:-$_first_name}" >&2
+        exit 1
+    fi
+elif [ -n "$PKG" ] && command -v "$PKG" >/dev/null 2>&1; then
     nohup "$PKG" >/dev/null 2>&1 &
 fi
 

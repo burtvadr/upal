@@ -4,7 +4,7 @@ The runner is one file. The header at the top is the configuration; the rest is 
 
 Data is the primary use case. Binaries are replaceable; the data mapping is the part that must survive. Host-provided binaries are the default, and folder-owned binaries are opt-in.
 
-> The reference template (`posix_variables`) implements the `link`, binary `out`, and icon subset today. The `env`, `link-out`, `copy`, `copy-sync`, `bind`, and bin/dat auto-detection rules below are the target contract.
+> The reference template (`posix_variables`) implements the `link`, binary `out`, icon, desktop-entry, and multi-entry subsets today. The `env`, `link-out`, `copy`, `copy-sync`, `bind`, and bin/dat auto-detection rules below are the target contract.
 
 ## Header
 
@@ -33,6 +33,8 @@ DESKTOP_FILE_SOURCE="$PORTABLE_ROOT"
 DESKTOP_FILE_TARGET="$HOME/.local/share/applications"
 DESKTOP_FILE_NAME=""
 DESKTOP_REWRITE_EXEC="yes"
+# Multi-entry suites: name|bindir|executable|desktop|icon|icon_id
+ENTRIES=""
 DESKTOP_INTEGRATION="yes"
 ICON_SOURCE="$PORTABLE_ROOT"
 ICON_NAME=""
@@ -69,6 +71,7 @@ KILL_TERMINAL="yes"
 | `DESKTOP_FILE_TARGET` | `$HOME/.local/share/applications` | Where to link them. |
 | `DESKTOP_FILE_NAME` | `""` | Optional filter. Empty means all `*.desktop` files in the source. |
 | `DESKTOP_REWRITE_EXEC` | `yes` | Rewrite `Exec=` to the runner. Set `no` when the desktop files launch different tools from the same folder. |
+| `ENTRIES` | `""` | Optional multi-entry list: `name\|bindir\|executable\|desktop\|icon\|icon_id` per line. |
 | `DESKTOP_INTEGRATION` | `yes` | Link and rewrite desktop files. |
 | `ICON_SOURCE` | `$PORTABLE_ROOT` | Where to find the icon. |
 | `ICON_NAME` | `""` | Icon filename. Empty means the first image found in `ICON_SOURCE`. |
@@ -368,6 +371,35 @@ app_run() {
 - `app_install` replaces the backend install step. Use it for stacks and adapters.
 - `app_run` replaces the default launch. It receives the original arguments; use it for container stacks such as Immich.
 - `redirect <portable> <host> <method>` is available to hooks for extra paths, such as Heroic's `~/Games`. The header stays one mapping per role; the hook handles the exceptions.
+
+## Multi-entry suites
+
+A folder can hold several launchers. `ENTRIES` takes one line per entry:
+
+```text
+name|bindir|executable|desktop|icon|icon_id
+```
+
+- `name` — argument used by the desktop entry and by the runner.
+- `bindir` — directory relative to the portable root; the runner changes into it before launching.
+- `executable` — executable relative to `bindir`.
+- `desktop` — desktop file relative to the portable root.
+- `icon` — icon relative to the portable root; empty falls back to `ICON`.
+- `icon_id` — theme name and `Icon=` value; empty derives from the icon filename.
+
+For each entry the runner installs the icon, links the desktop file, rewrites `Exec=` to `"$SELF" <name>` plus the original field codes, removes `TryExec=`, and sets `Icon=<icon_id>`. `run <name> [args]` launches that entry; with no name, the first entry is the default. If an entry has no executable and `app_run` is defined, the hook is called instead.
+
+Example:
+
+```sh
+ENTRIES="
+lts|bin/lts|blender-launcher|blender_lts.desktop|bin/lts/blender.svg|blender-lts
+latest|bin/latest|blender-launcher|blender_latest.desktop|bin/latest/blender.svg|blender-latest
+experimental|bin/experimental|blender-launcher|blender_experimental.desktop|bin/experimental/blender.svg|blender-experimental
+"
+```
+
+Keep each line at column 0; fields are split on `|`, so a path containing `|` is not supported. Set `BIN_SOURCE=""` for an entry-driven suite; otherwise the single-app binary linking also runs. `ENTRIES` replaces the single-app desktop/icon path; `DESKTOP_FILE_NAME` and `ICON_NAME` still provide the folder icon and fallback.
 
 ## Desktop entries
 

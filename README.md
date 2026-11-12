@@ -195,6 +195,10 @@ MyApp/
 
 Any image at the root, or in `ICON_SOURCE`, becomes the icon; MIME type decides, not the extension. `ICON_NAME` pins a specific file. The runner links the desktop file into `~/.local/share/applications`, rewrites `Exec=` to the runner, installs the icon into the hicolor theme, and sets `Icon=<id>` so the desktop entry survives moving the folder. Standard field codes like `%U` and `%F` are kept; other host-specific arguments are dropped. Set `DESKTOP_REWRITE_EXEC="no"` for a suite where each entry launches a different tool. `ICON_ID` defaults to the icon filename without its extension; set a reverse-DNS name to avoid collisions. `ICON_METHOD` chooses `copy` (default), `link`, or `none`. The runner also sets the folder icon through `gio`. Delete the image and the next run removes the theme icon, resets the folder icon, and falls back the desktop entry to the default. Remove the desktop file to opt out.
 
+## Multi-entry suites
+
+A folder can hold several launchers. List them in `ENTRIES`; the engine wires each desktop entry, icon, and launch. This is how one folder keeps Blender LTS, latest, and experimental together without a second script. See the Blender example in [docs/examples.md](docs/examples.md).
+
 ## Nautilus bundles (planned)
 
 The goal is to double-click the folder and launch the app, like a macOS bundle. Nautilus has no public hook for replacing directory activation, so this needs a small Nautilus patch. The plan is opt-in: a directory with an explicit `application.json` manifest is an application bundle; normal directories keep opening normally; downloaded bundles need confirmation before their first launch. Prototype in a Nautilus fork, then propose it upstream.
@@ -238,6 +242,7 @@ The target engine enforces these rules. The reference template implements an ear
 | Snap, Nix, Homebrew, Toolpak, pkgit, cpak adapters | specified |
 | Icon auto-detect, theme install, and reset | implemented |
 | Desktop entry link and `Exec=` rewrite | implemented |
+| Multi-entry suites (`ENTRIES`) | implemented |
 | Discovery GUI (`strace`/`ptrace`) | planned |
 | Nautilus directory activation (opt-in bundles) | planned |
 | Portable ZIP archive and AppManager interoperability | idea |

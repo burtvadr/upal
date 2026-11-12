@@ -2,7 +2,7 @@
 
 Each example is a complete portable root. Only the header and the app-specific hook block change; the engine is the same file.
 
-> These examples use the target header. The reference template implements the `link`, binary `out`, and icon subset; see the status table in the README.
+> These examples use the target header. The reference template implements the `link`, binary `out`, icon, desktop-entry, and multi-entry subsets; see the status table in the README.
 
 The examples are data-first. Binaries are optional; the host package manager can provide them.
 
@@ -226,6 +226,69 @@ Man-page linking writes to `/usr/share/man`, so the first run stops and asks for
 The `app_pre_link` hook stops a running adb server before the data link changes. The `app_post_link` hook gives `sndcpy.desktop` its own icon. `DESKTOP_REWRITE_EXEC="no"` keeps the original `Exec=` lines, so each entry launches its own tool instead of the runner.
 
 If you prefer distro packages, drop `bin/`, set `BIN_MODE="auto"`, and keep the same `dat/` mapping. The data does not change with the binary source.
+
+## Blender: three versions in one folder
+
+One folder can hold LTS, latest, and experimental builds. The engine handles the three entries; only the header knows them.
+
+```text
+Blender/
+├── run
+├── bin/
+│   ├── lts/
+│   │   ├── blender
+│   │   ├── blender-launcher
+│   │   └── blender.svg
+│   ├── latest/
+│   │   └── ...
+│   └── experimental/
+│       └── ...
+├── dat/
+│   ├── 4.5/
+│   ├── 5.0/
+│   └── 5.2/
+├── addons/
+├── blender_lts.desktop
+├── blender_latest.desktop
+├── blender_experimental.desktop
+└── blender.svg
+```
+
+```sh
+PACKAGE_MANAGER="none"
+PKG=""
+NAME="Blender"
+DAT_SOURCE="$PORTABLE_ROOT/dat"
+DAT_TARGET="$HOME/.config/blender"
+BACKUP="yes"
+BIN_SOURCE=""
+BIN_TARGET=""
+DESKTOP_FILE_SOURCE="$PORTABLE_ROOT"
+DESKTOP_FILE_TARGET="$HOME/.local/share/applications"
+DESKTOP_FILE_NAME=""
+ICON_NAME="blender.svg"
+ICON_SOURCE="$PORTABLE_ROOT"
+ICON_TARGET=""
+ICON_METHOD="copy"
+ENTRIES="
+lts|bin/lts|blender-launcher|blender_lts.desktop|bin/lts/blender.svg|blender-lts
+latest|bin/latest|blender-launcher|blender_latest.desktop|bin/latest/blender.svg|blender-latest
+experimental|bin/experimental|blender-launcher|blender_experimental.desktop|bin/experimental/blender.svg|blender-experimental
+"
+MAN=""
+KILL_TERMINAL="no"
+```
+
+`~/.config/blender` links to `dat`, so Blender's `4.5`, `5.0`, and `5.2` directories stay separate. `addons/` is left alone.
+
+The three desktop entries point at `run lts`, `run latest`, and `run experimental`. The runner launches the matching `blender-launcher` from its own directory and passes the file arguments through. With no argument, the first entry (LTS) is the default:
+
+```sh
+./run latest scene.blend
+./run
+```
+
+`BIN_SOURCE=""` is intentional: each entry has its own `bin/<name>/` directory, so there are no PATH links to collide.
 
 ## Immich: a container stack as one app
 

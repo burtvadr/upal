@@ -119,6 +119,10 @@ The abstraction is data plus a lifecycle, not an ELF binary. Immich is the proof
 
 The runner does not learn Docker. `app_run` starts the stack and opens the browser; `app_install` can pull images. One manager file remains the entry point. Helper scripts such as `up-immich` and `down-immich` are part of the stack, not additional managers.
 
+## Multi-entry folders
+
+A folder can hold several launchers. `ENTRIES` maps a name to a binary directory, an executable, a desktop file, and an icon. The engine installs each icon, rewrites each desktop `Exec=` to the runner plus the entry name, and launches the selected entry from its own directory. The header lists the entries; there is no per-application script. Data still maps through one `DAT_SOURCE`/`DAT_TARGET`, which is why Blender's version directories can share `dat/` while each desktop entry opens a different build.
+
 ## Icons
 
 Any image in the portable root, or in `ICON_SOURCE`, becomes the icon; MIME type decides, not the extension. `ICON_NAME` pins one file.
