@@ -191,6 +191,53 @@ if [ -n "$PKG" ]; then
     fi
 fi
 
+# If BIN_SOURCE contains only variant directories, build the ENTRIES list.
+# Set ENTRIES explicitly for layouts that do not follow the PKG convention.
+if [ -z "$ENTRIES" ] && [ -d "$BIN_SOURCE" ]; then
+    _has_files=0
+    for _f in "$BIN_SOURCE"/*; do
+        [ -f "$_f" ] && { _has_files=1; break; }
+    done
+    if [ "$_has_files" = "0" ]; then
+        for _d in "$BIN_SOURCE"/*; do
+            [ -d "$_d" ] || continue
+            _variant=$(basename -- "$_d")
+
+            _exe=""
+            if [ -n "$PKG" ] && [ -x "$_d/$PKG-launcher" ]; then
+                _exe="$PKG-launcher"
+            elif [ -n "$PKG" ] && [ -x "$_d/$PKG" ]; then
+                _exe="$PKG"
+            else
+                for _x in "$_d"/*; do
+                    [ -f "$_x" ] && [ -x "$_x" ] || continue
+                    _exe=$(basename -- "$_x")
+                    break
+                done
+            fi
+            [ -n "$_exe" ] || continue
+
+            _desk=""
+            if [ -n "$PKG" ] && [ -e "$PORTABLE_ROOT/${PKG}_${_variant}.desktop" ]; then
+                _desk="${PKG}_${_variant}.desktop"
+            elif [ -n "$PKG" ] && [ -e "$_d/${PKG}.desktop" ]; then
+                _desk="bin/${_variant}/${PKG}.desktop"
+            fi
+
+            _icon=""
+            if [ -n "$PKG" ] && [ -e "$_d/${PKG}.svg" ]; then
+                _icon="bin/${_variant}/${PKG}.svg"
+            elif [ -n "$PKG" ] && [ -e "$PORTABLE_ROOT/${PKG}.svg" ]; then
+                _icon="${PKG}.svg"
+            fi
+
+            _id="${PKG:-$NAME}-$_variant"
+            ENTRIES="${ENTRIES}${_variant}|bin/${_variant}|${_exe}|${_desk}|${_icon}|${_id}
+"
+        done
+    fi
+fi
+
 # Desktop entries and icons
 if [ -n "$ENTRIES" ]; then
     install_entry() {
@@ -419,7 +466,7 @@ fi
 # Link binaries from BIN_SOURCE to BIN_TARGET
 # BIN_SOURCE can be a directory or a single file
 # BIN_TARGET can be a directory or a single file path
-if [ -d "$BIN_SOURCE" ]; then
+if [ -z "$ENTRIES" ] && [ -d "$BIN_SOURCE" ]; then
     # BIN_SOURCE is a directory - link all executables
     mkdir -p "$BIN_TARGET" || need_root "create $BIN_TARGET"
     own_path "$BIN_TARGET"
@@ -430,7 +477,7 @@ if [ -d "$BIN_SOURCE" ]; then
         target="$BIN_TARGET/$name"
         link_or_backup "$f" "$target"
     done
-elif [ -f "$BIN_SOURCE" ] || [ -L "$BIN_SOURCE" ]; then
+elif [ -z "$ENTRIES" ] && { [ -f "$BIN_SOURCE" ] || [ -L "$BIN_SOURCE" ]; }; then
     # BIN_SOURCE is a single file
     if [ -d "$BIN_TARGET" ]; then
         # BIN_TARGET is a directory - link into it
@@ -501,6 +548,9 @@ if [ -n "$ENTRIES" ]; then
     _first_name=""
     _first_bindir=""
     _first_exec=""
+    _lts_name=""
+    _lts_bindir=""
+    _lts_exec=""
     _sel_bindir=""
     _sel_exec=""
     _sel=0
@@ -510,6 +560,11 @@ if [ -n "$ENTRIES" ]; then
             _first_name=$_name
             _first_bindir=$_bindir
             _first_exec=$_exec
+        fi
+        if [ "$_name" = "lts" ]; then
+            _lts_name=$_name
+            _lts_bindir=$_bindir
+            _lts_exec=$_exec
         fi
         if [ -n "$_want" ] && [ "$_name" = "$_want" ]; then
             _sel_bindir=$_bindir
@@ -522,6 +577,9 @@ EOF
 
     if [ "$_sel" = "1" ]; then
         shift
+    elif [ -n "$_lts_name" ]; then
+        _sel_bindir=$_lts_bindir
+        _sel_exec=$_lts_exec
     else
         _sel_bindir=$_first_bindir
         _sel_exec=$_first_exec

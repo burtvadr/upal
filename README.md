@@ -197,7 +197,7 @@ Any image at the root, or in `ICON_SOURCE`, becomes the icon; MIME type decides,
 
 ## Multi-entry suites
 
-A folder can hold several launchers. List them in `ENTRIES`; the engine wires each desktop entry, icon, and launch. This is how one folder keeps Blender LTS, latest, and experimental together without a second script. See the Blender example in [docs/examples.md](docs/examples.md).
+A folder can hold several launchers. If `bin/` contains variant subdirectories, the engine detects them automatically; `ENTRIES` is the explicit override. This is how Blender LTS, latest, and experimental stay in one folder without a second script. See the Blender example in [docs/examples.md](docs/examples.md).
 
 ## Nautilus bundles (planned)
 
@@ -242,7 +242,7 @@ The target engine enforces these rules. The reference template implements an ear
 | Snap, Nix, Homebrew, Toolpak, pkgit, cpak adapters | specified |
 | Icon auto-detect, theme install, and reset | implemented |
 | Desktop entry link and `Exec=` rewrite | implemented |
-| Multi-entry suites (`ENTRIES`) | implemented |
+| Multi-entry suites (`ENTRIES`/auto-detect) | implemented |
 | Discovery GUI (`strace`/`ptrace`) | planned |
 | Nautilus directory activation (opt-in bundles) | planned |
 | Portable ZIP archive and AppManager interoperability | idea |

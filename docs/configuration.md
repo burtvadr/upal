@@ -374,7 +374,15 @@ app_run() {
 
 ## Multi-entry suites
 
-A folder can hold several launchers. `ENTRIES` takes one line per entry:
+If `BIN_SOURCE` contains only subdirectories, the runner treats each subdirectory as a variant. With `PKG="blender"` and `bin/lts`, it looks for:
+
+- `bin/lts/blender-launcher` or `bin/lts/blender`;
+- `blender_lts.desktop` at the portable root, or `bin/lts/blender.desktop`;
+- `bin/lts/blender.svg`, or `blender.svg` at the portable root.
+
+The header stays the normal one; no list is needed. LTS is the default when present. This is the Blender layout.
+
+For a layout that does not follow the convention, set `ENTRIES` explicitly, one line per entry:
 
 ```text
 name|bindir|executable|desktop|icon|icon_id
@@ -387,7 +395,7 @@ name|bindir|executable|desktop|icon|icon_id
 - `icon` — icon relative to the portable root; empty falls back to `ICON`.
 - `icon_id` — theme name and `Icon=` value; empty derives from the icon filename.
 
-For each entry the runner installs the icon, links the desktop file, rewrites `Exec=` to `"$SELF" <name>` plus the original field codes, removes `TryExec=`, and sets `Icon=<icon_id>`. `run <name> [args]` launches that entry; with no name, the first entry is the default. If an entry has no executable and `app_run` is defined, the hook is called instead.
+For each entry the runner installs the icon, links the desktop file, rewrites `Exec=` to `"$SELF" <name>` plus the original field codes, removes `TryExec=`, and sets `Icon=<icon_id>`. `run <name> [args]` launches that entry; with no name, LTS is preferred, then the first entry. If an entry has no executable and `app_run` is defined, the hook is called instead.
 
 Example:
 
@@ -399,7 +407,7 @@ experimental|bin/experimental|blender-launcher|blender_experimental.desktop|bin/
 "
 ```
 
-Keep each line at column 0; fields are split on `|`, so a path containing `|` is not supported. Set `BIN_SOURCE=""` for an entry-driven suite; otherwise the single-app binary linking also runs. `ENTRIES` replaces the single-app desktop/icon path; `DESKTOP_FILE_NAME` and `ICON_NAME` still provide the folder icon and fallback.
+Keep each line at column 0; fields are split on `|`, so a path containing `|` is not supported. Binary linking is skipped when entries are present; the entry launch owns the binaries. `ENTRIES` replaces the single-app desktop/icon path; `DESKTOP_FILE_NAME` and `ICON_NAME` still provide the folder icon and fallback.
 
 ## Desktop entries
 

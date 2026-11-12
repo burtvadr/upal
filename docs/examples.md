@@ -256,12 +256,12 @@ Blender/
 
 ```sh
 PACKAGE_MANAGER="none"
-PKG=""
+PKG="blender"
 NAME="Blender"
 DAT_SOURCE="$PORTABLE_ROOT/dat"
 DAT_TARGET="$HOME/.config/blender"
 BACKUP="yes"
-BIN_SOURCE=""
+BIN_SOURCE="$PORTABLE_ROOT/bin"
 BIN_TARGET=""
 DESKTOP_FILE_SOURCE="$PORTABLE_ROOT"
 DESKTOP_FILE_TARGET="$HOME/.local/share/applications"
@@ -270,25 +270,20 @@ ICON_NAME="blender.svg"
 ICON_SOURCE="$PORTABLE_ROOT"
 ICON_TARGET=""
 ICON_METHOD="copy"
-ENTRIES="
-lts|bin/lts|blender-launcher|blender_lts.desktop|bin/lts/blender.svg|blender-lts
-latest|bin/latest|blender-launcher|blender_latest.desktop|bin/latest/blender.svg|blender-latest
-experimental|bin/experimental|blender-launcher|blender_experimental.desktop|bin/experimental/blender.svg|blender-experimental
-"
 MAN=""
 KILL_TERMINAL="no"
 ```
 
 `~/.config/blender` links to `dat`, so Blender's `4.5`, `5.0`, and `5.2` directories stay separate. `addons/` is left alone.
 
-The three desktop entries point at `run lts`, `run latest`, and `run experimental`. The runner launches the matching `blender-launcher` from its own directory and passes the file arguments through. With no argument, the first entry (LTS) is the default:
+The engine sees the subdirectories under `bin/` and maps each one automatically: it looks for `<PKG>-launcher` or `<PKG>`, `<PKG>_<name>.desktop`, and `<name>/<PKG>.svg`. Your tree already follows that convention. The three desktop entries point at `run lts`, `run latest`, and `run experimental`; the runner launches the matching `blender-launcher` from its own directory and passes the file arguments through. With no argument, LTS is the default:
 
 ```sh
 ./run latest scene.blend
 ./run
 ```
 
-`BIN_SOURCE=""` is intentional: each entry has its own `bin/<name>/` directory, so there are no PATH links to collide.
+There are no PATH links to collide because each variant is launched from its own `bin/<name>/` directory. If a layout does not follow the convention, the optional `ENTRIES` list overrides the detection.
 
 ## Immich: a container stack as one app
 
