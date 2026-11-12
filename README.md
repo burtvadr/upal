@@ -197,7 +197,7 @@ Any image at the root, or in `ICON_SOURCE`, becomes the icon; MIME type decides,
 
 ## Multi-entry suites
 
-A folder can hold several launchers. If `bin/` contains variant subdirectories, the engine detects them automatically; `ENTRIES` is the explicit override. This is how Blender LTS, latest, and experimental stay in one folder without a second script. See the Blender example in [docs/examples.md](docs/examples.md).
+A folder can hold several launchers. If `bin/` contains variant subdirectories, the engine detects them automatically; `ENTRIES` is the explicit override. See the configuration reference.
 
 ## Nautilus bundles (planned)
 

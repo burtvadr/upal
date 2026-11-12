@@ -35,6 +35,7 @@ DESKTOP_FILE_NAME=""
 DESKTOP_REWRITE_EXEC="yes"
 # Multi-entry suites: name|bindir|executable|desktop|icon|icon_id
 ENTRIES=""
+DEFAULT_ENTRY=""
 DESKTOP_INTEGRATION="yes"
 ICON_SOURCE="$PORTABLE_ROOT"
 ICON_NAME=""
@@ -72,6 +73,7 @@ KILL_TERMINAL="yes"
 | `DESKTOP_FILE_NAME` | `""` | Optional filter. Empty means all `*.desktop` files in the source. |
 | `DESKTOP_REWRITE_EXEC` | `yes` | Rewrite `Exec=` to the runner. Set `no` when the desktop files launch different tools from the same folder. |
 | `ENTRIES` | `""` | Optional multi-entry list: `name\|bindir\|executable\|desktop\|icon\|icon_id` per line. |
+| `DEFAULT_ENTRY` | `""` | Entry launched when no name is given. Empty means the first entry. |
 | `DESKTOP_INTEGRATION` | `yes` | Link and rewrite desktop files. |
 | `ICON_SOURCE` | `$PORTABLE_ROOT` | Where to find the icon. |
 | `ICON_NAME` | `""` | Icon filename. Empty means the first image found in `ICON_SOURCE`. |
@@ -374,13 +376,13 @@ app_run() {
 
 ## Multi-entry suites
 
-If `BIN_SOURCE` contains only subdirectories, the runner treats each subdirectory as a variant. With `PKG="blender"` and `bin/lts`, it looks for:
+If `BIN_SOURCE` contains only subdirectories, the runner treats each subdirectory as a variant. With `PKG="myapp"` and `bin/stable`, it looks for:
 
-- `bin/lts/blender-launcher` or `bin/lts/blender`;
-- `blender_lts.desktop` at the portable root, or `bin/lts/blender.desktop`;
-- `bin/lts/blender.svg`, or `blender.svg` at the portable root.
+- `bin/stable/myapp-launcher` or `bin/stable/myapp`;
+- `myapp_stable.desktop` at the portable root, or `bin/stable/myapp.desktop`;
+- `bin/stable/myapp.svg`, or `myapp.svg` at the portable root.
 
-The header stays the normal one; no list is needed. LTS is the default when present. This is the Blender layout.
+The header stays the normal one; no list is needed. `DEFAULT_ENTRY` selects the default; otherwise the first entry.
 
 For a layout that does not follow the convention, set `ENTRIES` explicitly, one line per entry:
 
@@ -395,15 +397,14 @@ name|bindir|executable|desktop|icon|icon_id
 - `icon` — icon relative to the portable root; empty falls back to `ICON`.
 - `icon_id` — theme name and `Icon=` value; empty derives from the icon filename.
 
-For each entry the runner installs the icon, links the desktop file, rewrites `Exec=` to `"$SELF" <name>` plus the original field codes, removes `TryExec=`, and sets `Icon=<icon_id>`. `run <name> [args]` launches that entry; with no name, LTS is preferred, then the first entry. If an entry has no executable and `app_run` is defined, the hook is called instead.
+For each entry the runner installs the icon, links the desktop file, rewrites `Exec=` to `"$SELF" <name>` plus the original field codes, removes `TryExec=`, and sets `Icon=<icon_id>`. `run <name> [args]` launches that entry; with no name, `DEFAULT_ENTRY` is used, then the first entry. If an entry has no executable and `app_run` is defined, the hook is called instead.
 
 Example:
 
 ```sh
 ENTRIES="
-lts|bin/lts|blender-launcher|blender_lts.desktop|bin/lts/blender.svg|blender-lts
-latest|bin/latest|blender-launcher|blender_latest.desktop|bin/latest/blender.svg|blender-latest
-experimental|bin/experimental|blender-launcher|blender_experimental.desktop|bin/experimental/blender.svg|blender-experimental
+stable|bin/stable|myapp-launcher|myapp_stable.desktop|bin/stable/myapp.svg|myapp-stable
+beta|bin/beta|myapp-launcher|myapp_beta.desktop|bin/beta/myapp.svg|myapp-beta
 "
 ```
 

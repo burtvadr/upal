@@ -227,64 +227,6 @@ The `app_pre_link` hook stops a running adb server before the data link changes.
 
 If you prefer distro packages, drop `bin/`, set `BIN_MODE="auto"`, and keep the same `dat/` mapping. The data does not change with the binary source.
 
-## Blender: three versions in one folder
-
-One folder can hold LTS, latest, and experimental builds. The engine handles the three entries; only the header knows them.
-
-```text
-Blender/
-├── run
-├── bin/
-│   ├── lts/
-│   │   ├── blender
-│   │   ├── blender-launcher
-│   │   └── blender.svg
-│   ├── latest/
-│   │   └── ...
-│   └── experimental/
-│       └── ...
-├── dat/
-│   ├── 4.5/
-│   ├── 5.0/
-│   └── 5.2/
-├── addons/
-├── blender_lts.desktop
-├── blender_latest.desktop
-├── blender_experimental.desktop
-└── blender.svg
-```
-
-```sh
-PACKAGE_MANAGER="none"
-PKG="blender"
-NAME="Blender"
-DAT_SOURCE="$PORTABLE_ROOT/dat"
-DAT_TARGET="$HOME/.config/blender"
-BACKUP="yes"
-BIN_SOURCE="$PORTABLE_ROOT/bin"
-BIN_TARGET=""
-DESKTOP_FILE_SOURCE="$PORTABLE_ROOT"
-DESKTOP_FILE_TARGET="$HOME/.local/share/applications"
-DESKTOP_FILE_NAME=""
-ICON_NAME="blender.svg"
-ICON_SOURCE="$PORTABLE_ROOT"
-ICON_TARGET=""
-ICON_METHOD="copy"
-MAN=""
-KILL_TERMINAL="no"
-```
-
-`~/.config/blender` links to `dat`, so Blender's `4.5`, `5.0`, and `5.2` directories stay separate. `addons/` is left alone.
-
-The engine sees the subdirectories under `bin/` and maps each one automatically: it looks for `<PKG>-launcher` or `<PKG>`, `<PKG>_<name>.desktop`, and `<name>/<PKG>.svg`. Your tree already follows that convention. The three desktop entries point at `run lts`, `run latest`, and `run experimental`; the runner launches the matching `blender-launcher` from its own directory and passes the file arguments through. With no argument, LTS is the default:
-
-```sh
-./run latest scene.blend
-./run
-```
-
-There are no PATH links to collide because each variant is launched from its own `bin/<name>/` directory. If a layout does not follow the convention, the optional `ENTRIES` list overrides the detection.
-
 ## Immich: a container stack as one app
 
 Immich is a web stack, not a desktop binary. The compose project directory is the portable data, so relative paths do the work.

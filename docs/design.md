@@ -121,7 +121,7 @@ The runner does not learn Docker. `app_run` starts the stack and opens the brows
 
 ## Multi-entry folders
 
-A folder can hold several launchers. If `bin/` contains only variant subdirectories, the engine detects each one and looks for `<PKG>-launcher` or `<PKG>`, `<PKG>_<name>.desktop`, and `<name>/<PKG>.svg`. LTS is the default when present. `ENTRIES` is the explicit override for layouts that do not follow the convention: it maps a name to a binary directory, an executable, a desktop file, and an icon. Either way, the engine installs each icon, rewrites each desktop `Exec=` to the runner plus the entry name, and launches the selected entry from its own directory. The header describes the folder; there is no per-application script. Data still maps through one `DAT_SOURCE`/`DAT_TARGET`, which is why Blender's version directories can share `dat/` while each desktop entry opens a different build.
+A folder can hold several launchers. If `bin/` contains only variant subdirectories, the engine detects each one and looks for `<PKG>-launcher` or `<PKG>`, `<PKG>_<name>.desktop`, and `<name>/<PKG>.svg`. `DEFAULT_ENTRY` selects the default; otherwise the first entry. `ENTRIES` is the explicit override for layouts that do not follow the convention: it maps a name to a binary directory, an executable, a desktop file, and an icon. Either way, the engine installs each icon, rewrites each desktop `Exec=` to the runner plus the entry name, and launches the selected entry from its own directory. The header describes the folder; there is no per-application script. Data still maps through one `DAT_SOURCE`/`DAT_TARGET`, so per-version state stays in one tree while each entry opens a different build.
 
 ## Icons
 

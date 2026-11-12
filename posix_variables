@@ -43,6 +43,7 @@ DESKTOP_FILE_TARGET="$HOME/.local/share/applications"
 DESKTOP_REWRITE_EXEC="yes"
 # Multi-entry suites: name|bindir|executable|desktop|icon|icon_id
 ENTRIES=""
+DEFAULT_ENTRY=""
 ICON_NAME=""
 ICON_ID=""
 ICON_SOURCE="$PORTABLE_ROOT"
@@ -548,9 +549,8 @@ if [ -n "$ENTRIES" ]; then
     _first_name=""
     _first_bindir=""
     _first_exec=""
-    _lts_name=""
-    _lts_bindir=""
-    _lts_exec=""
+    _default_bindir=""
+    _default_exec=""
     _sel_bindir=""
     _sel_exec=""
     _sel=0
@@ -561,10 +561,9 @@ if [ -n "$ENTRIES" ]; then
             _first_bindir=$_bindir
             _first_exec=$_exec
         fi
-        if [ "$_name" = "lts" ]; then
-            _lts_name=$_name
-            _lts_bindir=$_bindir
-            _lts_exec=$_exec
+        if [ -n "$DEFAULT_ENTRY" ] && [ "$_name" = "$DEFAULT_ENTRY" ]; then
+            _default_bindir=$_bindir
+            _default_exec=$_exec
         fi
         if [ -n "$_want" ] && [ "$_name" = "$_want" ]; then
             _sel_bindir=$_bindir
@@ -577,9 +576,9 @@ EOF
 
     if [ "$_sel" = "1" ]; then
         shift
-    elif [ -n "$_lts_name" ]; then
-        _sel_bindir=$_lts_bindir
-        _sel_exec=$_lts_exec
+    elif [ -n "$_default_bindir" ]; then
+        _sel_bindir=$_default_bindir
+        _sel_exec=$_default_exec
     else
         _sel_bindir=$_first_bindir
         _sel_exec=$_first_exec
