@@ -39,7 +39,7 @@ MyApp/
 ├── runner          # the only manager file
 ├── bin/            # optional: links to host binaries, or real binaries
 ├── dat/            # optional: portable user data
-├── icon.svg        # optional: first image becomes the icon
+├── icon.svg        # optional: single image becomes the icon
 ├── MyApp.desktop   # optional: desktop entry
 └── application.json # optional: Nautilus bundle manifest
 ```
@@ -193,7 +193,7 @@ MyApp/
 └── MyApp.desktop
 ```
 
-Any image at the root, or in `ICON_SOURCE`, becomes the icon; MIME type decides, not the extension. `ICON_NAME` pins a specific file. The runner links the desktop file into `~/.local/share/applications`, rewrites `Exec=` to the runner, installs the icon into the hicolor theme, and sets `Icon=<id>` so the desktop entry survives moving the folder. Standard field codes like `%U` and `%F` are kept; other host-specific arguments are dropped. Set `DESKTOP_REWRITE_EXEC="no"` for a suite where each entry launches a different tool. `ICON_ID` defaults to the icon filename without its extension; set a reverse-DNS name to avoid collisions. `ICON_METHOD` chooses `copy` (default), `link`, or `none`. The runner also sets the folder icon through `gio`. Replacing the image archives the previous theme icon as `<id>.<ext>1`, then `2`, and so on; deleting the image restores the oldest archive, so the default icon returns without manual path management. Remove the desktop file to opt out.
+Any single image at the root, or in `ICON_SOURCE`, becomes the icon; the MIME type decides the format, not the filename or extension, so renaming it to `banana` keeps working. Auto-detected icons use the package name as the theme ID, so a rename does not break the desktop entry; `ICON_ID` overrides it. `ICON_NAME` pins an exact file. If more than one image is present, the runner does not guess: it restores the default icon. The runner links the desktop file into `~/.local/share/applications`, rewrites `Exec=` to the runner, installs the icon into the hicolor theme, and sets `Icon=<id>` so the desktop entry survives moving the folder. Standard field codes like `%U` and `%F` are kept; other host-specific arguments are dropped. Set `DESKTOP_REWRITE_EXEC="no"` for a suite where each entry launches a different tool. Set a reverse-DNS `ICON_ID` to avoid collisions. `ICON_METHOD` chooses `copy` (default), `link`, or `none`. The runner also sets the folder icon through `gio`. Replacing the image archives the previous theme icon as `<id>.<ext>1`, then `2`, and so on; deleting the image restores the oldest archive, so the default icon returns without manual path management. A format change keeps the previous format as the default archive. Remove the desktop file to opt out.
 
 ## Multi-entry suites
 

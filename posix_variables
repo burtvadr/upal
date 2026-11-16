@@ -106,27 +106,42 @@ _icon_key=${PKG:-${NAME:-$(printf '%s' "$PORTABLE_ROOT" | cksum | cut -d' ' -f1)
 _icon_key=$(printf '%s' "$_icon_key" | tr -c 'A-Za-z0-9._-' '_')
 _icon_state="${XDG_STATE_HOME:-$HOME/.local/state}/upal/icon-$_icon_key"
 
+icon_state_field() {
+    [ -f "$_icon_state" ] || return 1
+    _v=$(sed -n "${1}p" "$_icon_state" 2>/dev/null)
+    [ -n "$_v" ] || return 1
+    printf '%s' "$_v"
+}
+
 icon_state_save() {
     _id=$1
     _ext=$2
     _dir=$3
     [ -n "$_id" ] && [ -n "$_ext" ] && [ -n "$_dir" ] || return 0
+    _def=$(icon_state_field 4) || _def=$_ext
+    _defdir=$(icon_state_field 5) || _defdir=$_dir
     mkdir -p "$(dirname -- "$_icon_state")" || need_root "create $(dirname -- "$_icon_state")"
-    printf '%s\n%s\n%s\n' "$_id" "$_ext" "$_dir" > "$_icon_state" || need_root "write $_icon_state"
+    printf '%s\n%s\n%s\n%s\n%s\n' "$_id" "$_ext" "$_dir" "$_def" "$_defdir" > "$_icon_state" || need_root "write $_icon_state"
     own "$_icon_state"
 }
 
 icon_state_load() {
     [ -f "$_icon_state" ] || return 1
+    _def=""
+    _defdir=""
     {
         IFS= read -r _id || return 1
         IFS= read -r _ext || return 1
         IFS= read -r _dir || return 1
+        IFS= read -r _def || _def=""
+        IFS= read -r _defdir || _defdir=""
     } < "$_icon_state" || return 1
     [ -n "$_id" ] && [ -n "$_ext" ] && [ -n "$_dir" ] || return 1
     ICON_ID=$_id
     _icon_ext=$_ext
     ICON_TARGET=$_dir
+    _icon_default_ext=$_def
+    _icon_default_dir=$_defdir
 }
 
 # Icon archives: <target>1, <target>2, ...
@@ -185,77 +200,167 @@ icon_backup() {
     fi
 }
 
+# Archive an active icon, then drop it if it was an identical copy of the
+# oldest archive and the backup skipped it.
+icon_archive_active() {
+    _p=$1
+    [ -e "$_p" ] || [ -L "$_p" ] || return 0
+    icon_backup "$_p"
+    [ -e "$_p" ] || [ -L "$_p" ] || return 0
+    rm -f "$_p" || need_root "remove $_p"
+}
+
 icon_install() {
     _src=$1
-    _tgt=$2
+    _new=$2
     [ -e "$_src" ] || return 1
-    _dir=$(dirname -- "$_tgt")
+    _dir=$(dirname -- "$_new")
     mkdir -p "$_dir" || need_root "create $_dir"
     own_path "$_dir"
 
-    if [ -e "$_tgt" ] || [ -L "$_tgt" ]; then
-        if [ "$_tgt" -ef "$_src" ]; then
+    _base=${_new%.*}
+    _ext=${_new##*.}
+    _id=${_base##*/}
+    # A renamed icon can change format and directory. Archive the active icon
+    # in the other standard theme directory so it stays available as default.
+    case "$_dir" in
+        "$HOME/.local/share/icons/hicolor/scalable/apps")
+            _other="$HOME/.local/share/icons/hicolor/256x256/apps" ;;
+        "$HOME/.local/share/icons/hicolor/256x256/apps")
+            _other="$HOME/.local/share/icons/hicolor/scalable/apps" ;;
+        *) _other="" ;;
+    esac
+    if [ -n "$_other" ]; then
+        for _e in svg png xpm jpg jpeg; do
+            _old="$_other/$_id.$_e"
+            if [ -e "$_old" ] || [ -L "$_old" ]; then
+                icon_archive_active "$_old"
+            fi
+        done
+    fi
+    # A renamed icon can change format in the same directory.
+    for _e in svg png xpm jpg jpeg; do
+        [ "$_e" = "$_ext" ] && continue
+        _old="$_base.$_e"
+        if [ -e "$_old" ] || [ -L "$_old" ]; then
+            icon_archive_active "$_old"
+        fi
+    done
+
+    if [ -e "$_new" ] || [ -L "$_new" ]; then
+        if [ "$_new" -ef "$_src" ]; then
             return 0
-        elif [ "$ICON_METHOD" != "link" ] && cmp -s "$_src" "$_tgt"; then
+        elif [ "$ICON_METHOD" != "link" ] && cmp -s "$_src" "$_new"; then
             return 0
         fi
     fi
 
-    icon_backup "$_tgt"
+    icon_backup "$_new"
     if [ "$ICON_METHOD" = "link" ]; then
-        ln -sfn "$_src" "$_tgt" || need_root "link $_tgt"
+        ln -sfn "$_src" "$_new" || need_root "link $_new"
     else
-        cp -f "$_src" "$_tgt" || need_root "copy $_src to $_tgt"
+        cp -f "$_src" "$_new" || need_root "copy $_src to $_new"
     fi
-    own "$_tgt"
+    own "$_new"
 }
 
+# icon_restore <dir> <id> [default_ext] [default_dir]
 # Bring back the default icon, or remove the managed one when there is none.
-# The oldest archive stays in place, so later runs keep restoring the same icon.
+# The default directory and extension survive format changes, and the oldest
+# archive stays in place, so later runs keep restoring the same icon.
 icon_restore() {
-    _tgt=$1
-    _first=$(icon_oldest "$_tgt")
+    _dir=$1
+    _id=$2
+    _defext=$3
+    _defdir=$4
+    [ -n "$_defext" ] || _defext=${_icon_default_ext:-$_icon_ext}
+    [ -n "$_defdir" ] || _defdir=${_icon_default_dir:-$_dir}
+    _first=""
+    [ -n "$_defext" ] && _first=$(icon_oldest "$_defdir/$_id.$_defext")
     if [ -n "$_first" ]; then
-        if [ ! -e "$_tgt" ] || ! cmp -s "$_first" "$_tgt"; then
-            rm -f "$_tgt" || need_root "replace $_tgt"
-            cp -f "$_first" "$_tgt" || need_root "restore $_first to $_tgt"
+        _active="$_defdir/$_id.$_defext"
+        if [ ! -e "$_active" ] || ! cmp -s "$_first" "$_active"; then
+            rm -f "$_active" || need_root "replace $_active"
+            cp -f "$_first" "$_active" || need_root "restore $_first to $_active"
         fi
-        own "$_tgt"
-        for _f in "$_tgt"[0-9]*; do
-            [ -e "$_f" ] || [ -L "$_f" ] || continue
-            [ "$_f" = "$_first" ] && continue
-            rm -f "$_f" || need_root "remove $_f"
+        own "$_active"
+        # Drop the active icon from the other directory and format
+        if [ "$_dir" != "$_defdir" ]; then
+            rm -f "$_dir/$_id.$_icon_ext" 2>/dev/null
+        fi
+        for _d in "$_defdir" "$_dir"; do
+            for _e in svg png xpm jpg jpeg; do
+                [ "$_d" = "$_defdir" ] && [ "$_e" = "$_defext" ] && continue
+                rm -f "$_d/$_id.$_e" 2>/dev/null
+            done
+        done
+        # Drop every archive except the default one
+        for _d in "$_defdir" "$_dir"; do
+            for _e in svg png xpm jpg jpeg; do
+                for _f in "$_d/$_id.$_e"[0-9]*; do
+                    [ -e "$_f" ] || [ -L "$_f" ] || continue
+                    [ "$_f" = "$_first" ] && continue
+                    rm -f "$_f" || need_root "remove $_f"
+                done
+            done
         done
     else
-        rm -f "$_tgt" || need_root "remove $_tgt"
+        for _d in "$_defdir" "$_dir"; do
+            for _e in svg png xpm jpg jpeg; do
+                rm -f "$_d/$_id.$_e" 2>/dev/null
+            done
+        done
     fi
 }
 
-# First image in ICON_SOURCE becomes the icon; ICON_NAME pins one
+# Map a file's MIME type to a theme icon extension
+icon_mime_ext() {
+    case "$(file -b --mime-type -- "$1" 2>/dev/null)" in
+        image/svg+xml)                 printf 'svg' ;;
+        image/png)                     printf 'png' ;;
+        image/x-xpixmap|image/x-xpm)   printf 'xpm' ;;
+        image/jpeg)                    printf 'jpg' ;;
+    esac
+}
+
+# A single image in ICON_SOURCE becomes the icon; ICON_NAME pins one.
+# Filenames and extensions do not matter, the MIME type does. More than one
+# image is ambiguous, so the default icon is kept.
+_icon_auto=""
 if [ -z "$ICON_NAME" ] && [ -d "$ICON_SOURCE" ]; then
+    _icon_count=0
+    _icon_ext_found=""
     for f in "$ICON_SOURCE"/*; do
         [ -f "$f" ] || continue
         case "$(file -b --mime-type -- "$f" 2>/dev/null)" in
-            image/*) ICON_NAME=${f##*/}; break ;;
+            image/*) ;;
+            *) continue ;;
         esac
+        _icon_count=$((_icon_count + 1))
+        _icon_first=$f
+        _icon_ext_found=$(icon_mime_ext "$f")
     done
+    if [ "$_icon_count" -eq 1 ] && [ -n "$_icon_ext_found" ]; then
+        ICON_NAME=${_icon_first##*/}
+        _icon_auto=1
+    fi
 fi
 if [ -n "$ICON_NAME" ]; then
     ICON="$ICON_SOURCE/$ICON_NAME"
+    _icon_ext=$(icon_mime_ext "$ICON")
+    if [ -z "$_icon_ext" ]; then
+        _icon_ext=${ICON_NAME##*.}
+        case "$_icon_ext" in
+            svg|png|xpm|jpg|jpeg) ;;
+            *) _icon_ext=png ;;
+        esac
+    fi
     if [ -z "$ICON_ID" ]; then
-        ICON_ID=${ICON_NAME%.*}
+        [ "$_icon_auto" = "1" ] && ICON_ID=${PKG:-$NAME}
+        [ -n "$ICON_ID" ] || ICON_ID=${ICON_NAME%.*}
     fi
     case "$ICON_ID" in
         *.svg|*.png|*.xpm|*.jpg|*.jpeg) ICON_ID=${ICON_ID%.*} ;;
-    esac
-    _icon_ext=${ICON_NAME##*.}
-    case "$_icon_ext" in
-        svg|png|xpm|jpg|jpeg) ;;
-        *) _icon_ext=png ;;
-    esac
-    case "$(file -b --mime-type -- "$ICON" 2>/dev/null)" in
-        image/svg+xml) _icon_ext=svg ;;
-        image/png) _icon_ext=png ;;
     esac
     case "$_icon_ext" in
         svg) _icon_dir="scalable/apps" ;;
@@ -264,10 +369,22 @@ if [ -n "$ICON_NAME" ]; then
     if [ -z "$ICON_TARGET" ]; then
         ICON_TARGET="$HOME/.local/share/icons/hicolor/$_icon_dir"
     fi
+    # A pinned icon can be renamed or its format changed; use the last
+    # installed location so the old active icon is cleaned up on restore.
+    if [ ! -e "$ICON" ]; then
+        _prev_dir=$(icon_state_field 3) || _prev_dir=""
+        _prev_ext=$(icon_state_field 2) || _prev_ext=""
+        [ -n "$_prev_dir" ] && ICON_TARGET=$_prev_dir
+        [ -n "$_prev_ext" ] && _icon_ext=$_prev_ext
+    fi
 elif [ -z "$ICON" ]; then
     # No source icon: recover the last installed icon so it can be restored
     icon_state_load || :
 fi
+
+# The default icon identity survives renames and format changes
+_icon_default_ext=$(icon_state_field 4) || _icon_default_ext=""
+_icon_default_dir=$(icon_state_field 5) || _icon_default_dir=""
 
 # Check whether any target path is on a filesystem without POSIX permission support
 paths="
@@ -615,7 +732,7 @@ if [ -n "$ENTRIES" ]; then
 $ENTRIES
 EOF
     if [ "$_entries_icon" = "0" ] && [ -n "$ICON_ID" ] && [ -n "$ICON_TARGET" ] && [ -n "$_icon_ext" ] && [ "$ICON_METHOD" != "none" ]; then
-        icon_restore "$ICON_TARGET/$ICON_ID.$_icon_ext"
+        icon_restore "$ICON_TARGET" "$ICON_ID" "$_icon_default_ext" "$_icon_default_dir"
     fi
     if command -v gtk-update-icon-cache >/dev/null 2>&1; then
         gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" >/dev/null 2>&1
@@ -717,7 +834,7 @@ if [ -z "$ENTRIES" ] && [ -n "$ICON" ] && [ -e "$ICON" ] && [ -n "$ICON_ID" ] &&
     fi
 elif [ -z "$ENTRIES" ] && [ "$ICON_METHOD" != "none" ] && [ -n "$ICON_ID" ] && [ -n "$ICON_TARGET" ] && [ -n "$_icon_ext" ]; then
     # Source icon was removed: restore the archived icon, or drop the managed one
-    icon_restore "$ICON_TARGET/$ICON_ID.$_icon_ext"
+    icon_restore "$ICON_TARGET" "$ICON_ID" "$_icon_default_ext" "$_icon_default_dir"
     if command -v gtk-update-icon-cache >/dev/null 2>&1; then
         gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" >/dev/null 2>&1
         own "$HOME/.local/share/icons/hicolor/icon-theme.cache"

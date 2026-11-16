@@ -77,8 +77,8 @@ KILL_TERMINAL="yes"
 | `LAUNCHER` | `""` | Optional external launcher/chooser. Runs when no entry name is given; bypassed by `run <entry>`. |
 | `DESKTOP_INTEGRATION` | `yes` | Link and rewrite desktop files. |
 | `ICON_SOURCE` | `$PORTABLE_ROOT` | Where to find the icon. |
-| `ICON_NAME` | `""` | Icon filename. Empty means the first image found in `ICON_SOURCE`. |
-| `ICON_ID` | derived | Theme icon name, without extension. Empty means the `ICON_NAME` basename without its extension. |
+| `ICON_NAME` | `""` | Icon filename. Empty auto-detects a single image in `ICON_SOURCE`; pinning an exact name disables rename detection. |
+| `ICON_ID` | derived | Theme icon name, without extension. Empty uses the package name for an auto-detected icon, or the `ICON_NAME` basename for a pinned file. |
 | `ICON_TARGET` | derived | Theme directory. Empty means `~/.local/share/icons/hicolor/scalable/apps` for SVG, `256x256/apps` otherwise. |
 | `ICON_METHOD` | `copy` | `copy`, `link`, or `none`. |
 | `NAME` | `$PKG` | Display name. |
@@ -402,7 +402,7 @@ name|bindir|executable|desktop|icon|icon_id
 - `executable` — executable relative to `bindir`.
 - `desktop` — desktop file relative to the portable root.
 - `icon` — icon relative to the portable root; empty falls back to `ICON`.
-- `icon_id` — theme name and `Icon=` value; empty derives from the icon filename. Auto-detected entries share the package icon; set explicit IDs only when the entries need different icons.
+- `icon_id` — theme name and `Icon=` value; empty uses the package icon. Auto-detected entries share it; set explicit IDs only when the entries need different icons.
 
 For each entry the runner installs the icon, links the desktop file, removes `TryExec=`, sets `Icon=<icon_id>`, creates `<pkg>-<name>` in `BIN_TARGET` pointing at the executable, and rewrites `Exec=` to that command plus the original field codes. If the bin directory is not on `PATH`, the absolute link path is used. `run <name> [args]` launches that entry; with no name, `DEFAULT_ENTRY` is used, then the first entry. If an entry has no executable and `app_run` is defined, the hook is called instead.
 
@@ -423,13 +423,13 @@ The runner links every `*.desktop` file from `DESKTOP_FILE_SOURCE` into `~/.loca
 
 ## Icons
 
-Any image at the portable root, or in `ICON_SOURCE`, is a candidate. The first one becomes the icon; `ICON_NAME` pins a specific file. Detection uses the MIME type, not the extension, so a PNG named `icon.svg` still works.
+Exactly one image at the portable root, or in `ICON_SOURCE`, becomes the icon. Detection uses the MIME type, not the filename or extension, so a PNG named `icon.svg` or an SVG named `banana` works. Auto-detected icons use the package name as the theme ID, so renaming the file changes nothing for the desktop entry. If more than one image is present, the runner does not guess: it restores the default icon. `ICON_NAME` pins an exact file.
 
 The runner installs the icon into the hicolor theme at `~/.local/share/icons/hicolor/scalable/apps/<id>.svg` (or `256x256/apps/<id>.png`) and sets `Icon=<id>` in the desktop entry. Moving the folder does not break the entry.
 
-When the icon changes, the previous theme icon is kept as `<id>.<ext>1`, then `<id>.<ext>2`, and so on. Deleting the image at the portable root restores the oldest archive as the active icon and removes the newer ones, so the default comes back without manual path management. The oldest archive stays in place for later runs. The last icon's id, extension, and theme directory are remembered under `${XDG_STATE_HOME:-$HOME/.local/state}/upal/`, so an auto-detected icon can be restored after its source file is deleted.
+When the icon changes, the previous theme icon is kept as `<id>.<ext>1`, then `<id>.<ext>2`, and so on. A format change archives the previous format in its own theme directory, so the default still survives. Deleting the image at the portable root restores the oldest archive as the active icon and removes the newer ones, so the default comes back without manual path management. The oldest archive stays in place for later runs. The last icon's id, extension, and theme directory are remembered under `${XDG_STATE_HOME:-$HOME/.local/state}/upal/`, so an auto-detected icon can be restored after its source file is deleted.
 
-- `ICON_ID` is the theme name. Empty means the source filename without its extension; set a reverse-DNS name such as `com.app.developer` to avoid collisions.
+- `ICON_ID` is the theme name. Empty uses the package name for an auto-detected icon, or the source filename without its extension when `ICON_NAME` is pinned; set a reverse-DNS name such as `com.app.developer` to avoid collisions.
 - `ICON_TARGET` overrides the theme directory.
 - `ICON_METHOD` is `copy` (default), `link`, or `none`. `copy` survives moving the folder. `link` updates with the source but breaks when the folder moves; the next run repairs it. `none` leaves the desktop entry on the absolute portable path.
 - `gio` sets `metadata::custom-icon` on the portable root and on `DAT_TARGET` from the portable file.

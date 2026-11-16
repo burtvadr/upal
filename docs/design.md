@@ -125,11 +125,11 @@ A folder can hold several launchers. If `bin/` contains only variant subdirector
 
 ## Icons
 
-Any image in the portable root, or in `ICON_SOURCE`, becomes the icon; MIME type decides, not the extension. `ICON_NAME` pins one file.
+Any single image in the portable root, or in `ICON_SOURCE`, becomes the icon; the MIME type decides the format, not the filename or extension. Auto-detected icons use the package name as the theme ID, so renaming the file does not break the desktop entry. If more than one image is present, the default icon is restored. `ICON_NAME` pins one exact file.
 
-The icon is installed into the hicolor theme under `ICON_ID` (default: the source filename without its extension), and the desktop entry uses `Icon=<id>`. This is the difference between a portable folder and a path-bound launcher: moving the folder leaves the desktop icon working. `ICON_METHOD="copy"` is the default and survives the move. `link` is smaller but breaks on move; the next run repairs it. `none` keeps the absolute path.
+The icon is installed into the hicolor theme under `ICON_ID` (default: the package name for an auto-detected icon, or the source filename without its extension when `ICON_NAME` is pinned), and the desktop entry uses `Icon=<id>`. This is the difference between a portable folder and a path-bound launcher: moving the folder leaves the desktop icon working. `ICON_METHOD="copy"` is the default and survives the move. `link` is smaller but breaks on move; the next run repairs it. `none` keeps the absolute path.
 
-Replacing the icon archives the previous theme icon as `<id>.<ext>1`, then `2`, and so on. Deleting the source image restores the oldest archive, so the default icon returns without the user managing theme paths. The oldest archive stays in place; newer archives are discarded on restore.
+Replacing the icon archives the previous theme icon as `<id>.<ext>1`, then `2`, and so on. A format change archives the previous format in its own theme directory, so the default survives. Deleting the source image restores the oldest archive, so the default icon returns without the user managing theme paths. The oldest archive stays in place; newer archives are discarded on restore.
 
 `gio` still sets the folder icon from the portable file. Deleting the image restores the archived icon, or removes the managed theme icon when there is no archive, and unsets the folder metadata.
 
