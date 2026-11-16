@@ -64,10 +64,10 @@ KILL_TERMINAL="yes"
 | `DAT_TARGET` | `""` | Host data path. Empty means XDG mapping when the data directory is XDG-shaped, otherwise no redirection. |
 | `DAT_METHOD` | `link` | `link`, `link-out`, `env`, `copy`, `copy-sync`, `bind`, or `none`. |
 | `DAT_ENV` | `XDG_CONFIG_HOME` | Variable exported for the `env` method. |
-| `BACKUP` | `yes` | Before replacing an existing host path, keep it as `<path>.bak`, then `.bak.1`, `.bak.2`. `no` aborts on conflict. |
+| `BACKUP` | `yes` | Adopted host data keeps a `<path>.bak` copy; a real conflict is kept as `<path>1`, `<path>2`. `no` aborts on conflict. |
 | `BIN_MODE` | `auto` | `auto`, `in`, `out`, or `copy`. |
 | `BIN_SOURCE` | `""` | Portable binary directory or single file. Empty means detect. |
-| `BIN_TARGET` | `""` | Host `PATH` directory or single file. Used by `out` only. Empty means the first writable `PATH` directory. |
+| `BIN_TARGET` | `""` | Host `PATH` directory or single file. Used by `out` only. Empty means the first writable user directory (`~/.local/bin`, then `~/bin`), then `/usr/local/bin` or `/usr/bin`. |
 | `DESKTOP_FILE_SOURCE` | `$PORTABLE_ROOT` | Where to find `*.desktop` files. |
 | `DESKTOP_FILE_TARGET` | `$HOME/.local/share/applications` | Where to link them. |
 | `DESKTOP_FILE_NAME` | `""` | Optional filter. Empty means all `*.desktop` files in the source. |
@@ -118,7 +118,13 @@ DAT_METHOD="link"
 
 This is the default. It works for any application that accepts a symlinked directory. Some applications replace the symlink or resolve it to a real path; use `env` or `bind` for those.
 
-If the host path already exists, it is backed up as `<path>.bak` before the link. Further conflicts use `.bak.1`, `.bak.2`, and so on. `BACKUP="no"` aborts instead of overwriting.
+An existing host path is handled in this order:
+
+- An empty host directory is removed; nothing is lost.
+- If the portable path is empty and the host path has data, the host data is copied into the portable path and becomes the portable data. The host path is then kept as `<path>.bak` before the link.
+- If both sides have data, the host path is backed up as `<path>1`, `<path>2`, and so on, then replaced by the link. The portable data wins.
+
+`BACKUP="no"` aborts instead of replacing host data.
 
 ### `link-out`
 
@@ -381,9 +387,9 @@ If `BIN_SOURCE` contains only subdirectories, the runner treats each subdirector
 
 - `bin/stable/myapp-launcher` or `bin/stable/myapp`;
 - `myapp_stable.desktop` at the portable root, or `bin/stable/myapp.desktop`;
-- `bin/stable/myapp.svg`, or `myapp.svg` at the portable root.
+- `myapp.svg` at the portable root, or `bin/stable/myapp.svg`.
 
-The header stays the normal one; no list is needed. `DEFAULT_ENTRY` selects the default; otherwise the first entry. Set `LAUNCHER` to an external chooser to pick at launch; `run <entry>` bypasses it.
+The header stays the normal one; no list is needed. Auto-detected entries share one icon (`Icon=myapp`) and each gets a `myapp-stable` command in `BIN_TARGET`. `DEFAULT_ENTRY` selects the default; otherwise the first entry. Set `LAUNCHER` to an external chooser to pick at launch; `run <entry>` bypasses it.
 
 For a layout that does not follow the convention, set `ENTRIES` explicitly, one line per entry:
 
@@ -396,9 +402,9 @@ name|bindir|executable|desktop|icon|icon_id
 - `executable` — executable relative to `bindir`.
 - `desktop` — desktop file relative to the portable root.
 - `icon` — icon relative to the portable root; empty falls back to `ICON`.
-- `icon_id` — theme name and `Icon=` value; empty derives from the icon filename.
+- `icon_id` — theme name and `Icon=` value; empty derives from the icon filename. Auto-detected entries share the package icon; set explicit IDs only when the entries need different icons.
 
-For each entry the runner installs the icon, links the desktop file, rewrites `Exec=` to `"$SELF" <name>` plus the original field codes, removes `TryExec=`, and sets `Icon=<icon_id>`. `run <name> [args]` launches that entry; with no name, `DEFAULT_ENTRY` is used, then the first entry. If an entry has no executable and `app_run` is defined, the hook is called instead.
+For each entry the runner installs the icon, links the desktop file, removes `TryExec=`, sets `Icon=<icon_id>`, creates `<pkg>-<name>` in `BIN_TARGET` pointing at the executable, and rewrites `Exec=` to that command plus the original field codes. If the bin directory is not on `PATH`, the absolute link path is used. `run <name> [args]` launches that entry; with no name, `DEFAULT_ENTRY` is used, then the first entry. If an entry has no executable and `app_run` is defined, the hook is called instead.
 
 Example:
 
@@ -409,7 +415,7 @@ beta|bin/beta|myapp-launcher|myapp_beta.desktop|bin/beta/myapp.svg|myapp-beta
 "
 ```
 
-Keep each line at column 0; fields are split on `|`, so a path containing `|` is not supported. Binary linking is skipped when entries are present; the entry launch owns the binaries. `ENTRIES` replaces the single-app desktop/icon path; `DESKTOP_FILE_NAME` and `ICON_NAME` still provide the folder icon and fallback.
+Keep each line at column 0; fields are split on `|`, so a path containing `|` is not supported. Each entry gets its own command link, so `myapp-stable` starts the stable build from any directory. `ENTRIES` replaces the single-app desktop/icon path; `DESKTOP_FILE_NAME` and `ICON_NAME` still provide the folder icon and fallback.
 
 ## Desktop entries
 
@@ -421,11 +427,13 @@ Any image at the portable root, or in `ICON_SOURCE`, is a candidate. The first o
 
 The runner installs the icon into the hicolor theme at `~/.local/share/icons/hicolor/scalable/apps/<id>.svg` (or `256x256/apps/<id>.png`) and sets `Icon=<id>` in the desktop entry. Moving the folder does not break the entry.
 
+When the icon changes, the previous theme icon is kept as `<id>.<ext>1`, then `<id>.<ext>2`, and so on. Deleting the image at the portable root restores the oldest archive as the active icon and removes the newer ones, so the default comes back without manual path management. The oldest archive stays in place for later runs. The last icon's id, extension, and theme directory are remembered under `${XDG_STATE_HOME:-$HOME/.local/state}/upal/`, so an auto-detected icon can be restored after its source file is deleted.
+
 - `ICON_ID` is the theme name. Empty means the source filename without its extension; set a reverse-DNS name such as `com.app.developer` to avoid collisions.
 - `ICON_TARGET` overrides the theme directory.
 - `ICON_METHOD` is `copy` (default), `link`, or `none`. `copy` survives moving the folder. `link` updates with the source but breaks when the folder moves; the next run repairs it. `none` leaves the desktop entry on the absolute portable path.
 - `gio` sets `metadata::custom-icon` on the portable root and on `DAT_TARGET` from the portable file.
-- Deleting the image removes the managed theme icon, unsets the folder metadata with `gio set -t unset`, and falls back the desktop `Icon=` to the package or application name. The next run restores the icon if a new image appears.
+- Deleting the image restores the archived icon, or removes the managed theme icon when there is no archive. It also unsets the folder metadata with `gio set -t unset`. The next run installs the icon again if a new image appears.
 
 ## Environment
 
@@ -454,7 +462,7 @@ Re-run as root: sudo ./runner
 
 1. Never replace a real file or directory without a successful backup. If the target is root-owned, run the runner with sudo; the engine never invokes sudo. Abort if the backup fails.
 2. Only touch links whose name is managed and whose target belongs to this runner. No broad globs.
-3. Back up conflicts as `.bak`, `.bak.1`, `.bak.2`, and so on; never overwrite. `BACKUP="yes"` is the default.
+3. Empty target directories are removed. Host data adopted into the portable folder keeps a `.bak` copy; a real conflict is backed up as `<path>1`, `<path>2`, and so on. Never overwrite. `BACKUP="yes"` is the default.
 4. Every run is idempotent.
 5. Switching modes never deletes real binaries. `out` → `in` aborts if real files occupy the link paths.
 6. The filesystem check runs once on `$PORTABLE_ROOT` and exits cleanly. NTFS, exFAT, and similar filesystems are refused.

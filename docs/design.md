@@ -41,13 +41,13 @@ Binaries use the same idea with a different unit: a command name, a source direc
 4. Detect binaries and data.
 5. Install missing packages, one per `PKG` word, or call `app_install`.
 6. Link binaries according to `BIN_MODE`.
-7. Link data according to `DAT_METHOD`: move host data in on first link, back up conflicts as `.bak`.
+7. Link data according to `DAT_METHOD`: adopt host data when the portable side is empty, remove an empty target directory, and back up a real conflict as `<path>1`, `<path>2`.
 8. Link and rewrite desktop files, icon, man pages.
 9. Run `app_env`, `app_pre_link`, `app_post_link`.
 10. Launch the application with the original arguments, or call `app_run`.
 11. Close the terminal only when `KILL_TERMINAL=yes` and the runner has a controlling terminal.
 
-The runner is idempotent. Running it twice changes nothing.
+The runner is idempotent. Running it twice changes nothing. A link that already resolves to the same inode is left alone, even when it reaches it through another path.
 
 ## Data first
 
@@ -57,7 +57,7 @@ This is why the data mapping is the center of the contract and the binary mode i
 
 ## Data reuse and version compatibility
 
-Portable data is independent of the binary. The same folder can point at a distro package, a Flatpak, or a locally built binary. UPAL does not convert data between application versions or distributions; that is the user's decision. The safety net is a backup: `BACKUP="yes"` keeps the previous host data as `<path>.bak` before linking. Disable it only when you have your own backup.
+Portable data is independent of the binary. The same folder can point at a distro package, a Flatpak, or a locally built binary. UPAL does not convert data between application versions or distributions; that is the user's decision. The safety net is a backup: `BACKUP="yes"` copies existing host data into the portable folder and keeps the host copy as `<path>.bak`; a real conflict is kept as `<path>1`, `<path>2`. Disable it only when you have your own backup.
 
 ## Data is per application
 
@@ -121,7 +121,7 @@ The runner does not learn Docker. `app_run` starts the stack and opens the brows
 
 ## Multi-entry folders
 
-A folder can hold several launchers. If `bin/` contains only variant subdirectories, the engine detects each one and looks for `<PKG>-launcher` or `<PKG>`, `<PKG>_<name>.desktop`, and `<name>/<PKG>.svg`. `DEFAULT_ENTRY` selects the default; otherwise the first entry. `ENTRIES` is the explicit override for layouts that do not follow the convention: it maps a name to a binary directory, an executable, a desktop file, and an icon. Either way, the engine installs each icon, rewrites each desktop `Exec=` to the runner plus the entry name, and launches the selected entry from its own directory. The header describes the folder; there is no per-application script. Data still maps through one `DAT_SOURCE`/`DAT_TARGET`, so per-version state stays in one tree while each entry opens a different build.
+A folder can hold several launchers. If `bin/` contains only variant subdirectories, the engine detects each one and looks for `<PKG>-launcher` or `<PKG>`, `<PKG>_<name>.desktop`, and `<PKG>.svg` at the root (or in the variant directory). `DEFAULT_ENTRY` selects the default; otherwise the first entry. `ENTRIES` is the explicit override for layouts that do not follow the convention: it maps a name to a binary directory, an executable, a desktop file, and an icon. Either way, auto-detected entries share one icon, each desktop `Exec=` becomes `<pkg>-<name>`, and the engine links that command into the user's bin directory. The header describes the folder; there is no per-application script. Data still maps through one `DAT_SOURCE`/`DAT_TARGET`, so per-version state stays in one tree while each entry opens a different build.
 
 ## Icons
 
@@ -129,7 +129,9 @@ Any image in the portable root, or in `ICON_SOURCE`, becomes the icon; MIME type
 
 The icon is installed into the hicolor theme under `ICON_ID` (default: the source filename without its extension), and the desktop entry uses `Icon=<id>`. This is the difference between a portable folder and a path-bound launcher: moving the folder leaves the desktop icon working. `ICON_METHOD="copy"` is the default and survives the move. `link` is smaller but breaks on move; the next run repairs it. `none` keeps the absolute path.
 
-`gio` still sets the folder icon from the portable file. Deleting the image removes the managed theme icon, unsets the folder metadata, and falls back the desktop entry to the package or application name.
+Replacing the icon archives the previous theme icon as `<id>.<ext>1`, then `2`, and so on. Deleting the source image restores the oldest archive, so the default icon returns without the user managing theme paths. The oldest archive stays in place; newer archives are discarded on restore.
+
+`gio` still sets the folder icon from the portable file. Deleting the image restores the archived icon, or removes the managed theme icon when there is no archive, and unsets the folder metadata.
 
 ## Nautilus application bundles
 

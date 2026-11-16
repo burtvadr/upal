@@ -30,7 +30,7 @@ The irreplaceable part is user data: profiles, saves, plugins, configuration, st
 
 A locally compiled application fits the same model: put the binary in `bin/`, set `BIN_MODE="copy"`, and keep the data mapping.
 
-Portable data is independent of the binary. The same folder can point at a distro package, a Flatpak, or a locally built binary. UPAL does not convert data between application versions or distributions: moving an Arch profile to an older Debian build is the user's decision. `BACKUP="yes"` (default) keeps the previous host data as `<path>.bak` before linking, so there is a rollback.
+Portable data is independent of the binary. The same folder can point at a distro package, a Flatpak, or a locally built binary. UPAL does not convert data between application versions or distributions: moving an Arch profile to an older Debian build is the user's decision. `BACKUP="yes"` (default) copies existing host data into the portable folder and keeps the host copy as `<path>.bak`, so there is a rollback.
 
 The layout:
 
@@ -193,7 +193,7 @@ MyApp/
 └── MyApp.desktop
 ```
 
-Any image at the root, or in `ICON_SOURCE`, becomes the icon; MIME type decides, not the extension. `ICON_NAME` pins a specific file. The runner links the desktop file into `~/.local/share/applications`, rewrites `Exec=` to the runner, installs the icon into the hicolor theme, and sets `Icon=<id>` so the desktop entry survives moving the folder. Standard field codes like `%U` and `%F` are kept; other host-specific arguments are dropped. Set `DESKTOP_REWRITE_EXEC="no"` for a suite where each entry launches a different tool. `ICON_ID` defaults to the icon filename without its extension; set a reverse-DNS name to avoid collisions. `ICON_METHOD` chooses `copy` (default), `link`, or `none`. The runner also sets the folder icon through `gio`. Delete the image and the next run removes the theme icon, resets the folder icon, and falls back the desktop entry to the default. Remove the desktop file to opt out.
+Any image at the root, or in `ICON_SOURCE`, becomes the icon; MIME type decides, not the extension. `ICON_NAME` pins a specific file. The runner links the desktop file into `~/.local/share/applications`, rewrites `Exec=` to the runner, installs the icon into the hicolor theme, and sets `Icon=<id>` so the desktop entry survives moving the folder. Standard field codes like `%U` and `%F` are kept; other host-specific arguments are dropped. Set `DESKTOP_REWRITE_EXEC="no"` for a suite where each entry launches a different tool. `ICON_ID` defaults to the icon filename without its extension; set a reverse-DNS name to avoid collisions. `ICON_METHOD` chooses `copy` (default), `link`, or `none`. The runner also sets the folder icon through `gio`. Replacing the image archives the previous theme icon as `<id>.<ext>1`, then `2`, and so on; deleting the image restores the oldest archive, so the default icon returns without manual path management. Remove the desktop file to opt out.
 
 ## Multi-entry suites
 
@@ -217,9 +217,9 @@ A portable folder can be zipped into one file for transport. Unzip it, click the
 
 The target engine enforces these rules. The reference template implements an earlier subset and does not yet meet all of them.
 
-- Existing host data is moved into the portable folder on first link; a real conflict is backed up as `.bak`, `.bak.1`, `.bak.2`, never overwritten. Backup is on by default (`BACKUP="yes"`).
+- Existing host data is copied into the portable folder on first link and the host copy is kept as `.bak`. A real conflict is backed up as `<path>1`, `<path>2`, and so on. Empty target directories are removed. Backup is on by default (`BACKUP="yes"`).
 - A real file or directory is never replaced by a symlink unless the backup succeeds. If a target needs root, the runner stops and asks you to re-run it with sudo; it never invokes sudo itself.
-- Cleanup only touches links whose name and target belong to this runner. No broad `rm "$BIN_TARGET"/*`.
+- Cleanup only touches links whose name and target belong to this runner. No broad `rm "$BIN_TARGET"/*`. A link that already resolves to the same inode is left untouched, even if it points through another path.
 - Every run is idempotent.
 - `UPAL_DRY_RUN=1` prints the planned actions and changes nothing. `UPAL_VERBOSE=1` prints detection results.
 - The filesystem check runs once, on the portable root, and exits cleanly. It does not kill the terminal from a subshell.

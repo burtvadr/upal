@@ -73,7 +73,7 @@ NAME="GIMP"
 First run:
 
 - installs `gimp` if missing;
-- moves existing `~/.config/GIMP` into `dat/`, then links it back;
+- copies existing `~/.config/GIMP` into `dat/`, keeps the host copy as `.bak`, then links it back;
 - links `gimp.desktop` into `~/.local/share/applications`;
 - rewrites `Exec=` to the runner, installs the icon into the hicolor theme, and sets `Icon=org.gimp.GIMP`;
 - runs `gimp`.
@@ -219,7 +219,7 @@ app_post_link() {
 }
 ```
 
-`BIN_TARGET=""` means the first writable `PATH` directory, usually `~/.local/bin`. The runner links each executable there and backs up anything it replaces. Support files (`lib64`, `scrcpy-server`, the notices) stay in `bin/` next to the executables; only executable files are linked.
+`BIN_TARGET=""` means the first writable user bin directory, usually `~/.local/bin`, then `/usr/local/bin` or `/usr/bin`. The runner links each executable there and backs up anything it replaces as `name1`, `name2`, and so on. Support files (`lib64`, `scrcpy-server`, the notices) stay in `bin/` next to the executables; only executable files are linked.
 
 Man-page linking writes to `/usr/share/man`, so the first run stops and asks for a rerun with sudo. Set `MAN=""` if you do not want that.
 
