@@ -8,6 +8,7 @@ PORTABLE_ROOT=$(cd -P -- "$(dirname -- "$0")" && command pwd -P)
 # Variables
 PACKAGE_MANAGER="auto"
 FLATPAK_ID=""
+FLATPAK_SCOPE="user"
 PKG=""
 NAME="$PKG"
 DAT_SOURCE="$PORTABLE_ROOT/dat"
@@ -67,6 +68,14 @@ need_root() {
         printf '%s\n' "This needs root: $*" >&2
         printf '%s\n' "Re-run as root: ${ESCALATOR:+$ESCALATOR }$0" >&2
     fi
+    exit 1
+}
+
+# Ask for a root rerun only when not already root
+require_root() {
+    [ "$(id -u)" -eq 0 ] && return 0
+    printf '%s\n' "This needs root: $*" >&2
+    printf '%s\n' "Re-run as root: ${ESCALATOR:+$ESCALATOR }$0" >&2
     exit 1
 }
 
@@ -397,6 +406,14 @@ if [ -n "$FLATPAK_ID" ]; then
             exit 1
             ;;
     esac
+    case "$FLATPAK_SCOPE" in
+        user)   _flatpak_scope=--user ;;
+        system) _flatpak_scope=--system ;;
+        *)
+            printf 'Invalid FLATPAK_SCOPE: %s (use user or system)\n' "$FLATPAK_SCOPE" >&2
+            exit 1
+            ;;
+    esac
     case "$PACKAGE_MANAGER" in
         ""|auto) PACKAGE_MANAGER=flatpak ;;
     esac
@@ -407,6 +424,65 @@ fi
 if [ "$PACKAGE_MANAGER" = "flatpak" ] && [ -z "$FLATPAK_ID" ]; then
     printf 'FLATPAK_ID is required for the Flatpak profile\n' >&2
     exit 1
+fi
+
+# Flatpak prerequisites: install flatpak if missing, then make sure the user
+# has flathub. Package managers that can authenticate through polkit are tried
+# first; the distro fallback follows the same root rule as native installs.
+if [ "$PACKAGE_MANAGER" = "flatpak" ] && [ -n "$FLATPAK_ID" ]; then
+    _flatpak_was_missing=0
+    if ! command -v flatpak >/dev/null 2>&1; then
+        _flatpak_was_missing=1
+        if command -v pkgcli >/dev/null 2>&1; then
+            pkgcli install flatpak
+        fi
+        if ! command -v flatpak >/dev/null 2>&1 && command -v pkcon >/dev/null 2>&1; then
+            pkcon install flatpak
+        fi
+        if ! command -v flatpak >/dev/null 2>&1; then
+            require_root "install flatpak"
+            if [ -r /etc/os-release ]; then
+                . /etc/os-release
+            fi
+            case "${ID:-}" in
+                ubuntu|debian|linuxmint|pop|neon)
+                    apt-get update && apt-get install -y flatpak
+                    ;;
+                fedora)
+                    dnf install -y flatpak
+                    ;;
+                arch|manjaro|endeavouros)
+                    pacman -S --needed --noconfirm flatpak
+                    ;;
+                opensuse*|suse*)
+                    zypper install -y flatpak
+                    ;;
+                *)
+                    printf 'Install flatpak with your package manager, then run this again.\n' >&2
+                    exit 1
+                    ;;
+            esac
+        fi
+        hash -r 2>/dev/null || :
+        if ! command -v flatpak >/dev/null 2>&1; then
+            printf 'flatpak is still not available after installation.\n' >&2
+            exit 1
+        fi
+    fi
+
+    if ! flatpak remotes $_flatpak_scope --columns=name 2>/dev/null | grep -qx flathub; then
+        if ! flatpak remote-add $_flatpak_scope --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo; then
+            printf 'Could not add the flathub remote for the %s scope.\n' "$FLATPAK_SCOPE" >&2
+            printf 'Rerun with the needed privileges, or set FLATPAK_SCOPE="user".\n' >&2
+            exit 1
+        fi
+    fi
+
+    if [ "$_flatpak_was_missing" = "1" ]; then
+        printf 'Flatpak and Flathub were installed. Restart the system, then run this again.\n' >&2
+        command -v notify-send >/dev/null 2>&1 && notify-send "Flatpak installed" "Restart the system, then run this again." 2>/dev/null
+        exit 1
+    fi
 fi
 
 # Icon archives: <target>1, <target>2, ...
@@ -686,10 +762,10 @@ if [ "$PACKAGE_MANAGER" = "flatpak" ] && [ -n "$FLATPAK_ID" ]; then
         printf 'flatpak is not installed\n' >&2
         exit 1
     }
-    if ! flatpak info "$FLATPAK_ID" >/dev/null 2>&1; then
-        flatpak install --user -y "$FLATPAK_ID" || flatpak install -y "$FLATPAK_ID" || {
+    if ! flatpak info $_flatpak_scope "$FLATPAK_ID" >/dev/null 2>&1; then
+        flatpak install $_flatpak_scope -y flathub "$FLATPAK_ID" || {
             printf 'Flatpak app is not installed: %s\n' "$FLATPAK_ID" >&2
-            printf 'Install it with: flatpak install %s\n' "$FLATPAK_ID" >&2
+            printf 'Install it with: flatpak install --%s -y flathub %s\n' "$FLATPAK_SCOPE" "$FLATPAK_ID" >&2
             exit 1
         }
     fi
@@ -701,7 +777,7 @@ elif [ -n "$PKG" ]; then
     elif { [ "$PACKAGE_MANAGER" = "auto" ] || [ "$PACKAGE_MANAGER" = "native" ]; } && command -v pkcon >/dev/null 2>&1; then
         pkcon install "$PKG"
     elif [ "$PACKAGE_MANAGER" = "auto" ] || [ "$PACKAGE_MANAGER" = "native" ] || [ "$PACKAGE_MANAGER" = "distro" ]; then
-        need_root "install packages with the system package manager"
+        require_root "install packages with the system package manager"
         . /etc/os-release
         case "$ID" in
             ubuntu|debian)
@@ -812,14 +888,14 @@ flatpak_launcher() {
     cat > "$1" <<EOF || need_root "write $1"
 #!/bin/sh
 # Managed by UPAL: Flatpak launcher
-exec flatpak run "$FLATPAK_ID" "\$@"
+exec flatpak run $_flatpak_scope "$FLATPAK_ID" "\$@"
 EOF
     chmod +x "$1" 2>/dev/null || need_root "make $1 executable"
     own "$1"
 }
 
 if [ -n "$FLATPAK_ID" ] && [ -e "$BIN_SOURCE" ]; then
-    _fp_cmd=$(flatpak info -m "$FLATPAK_ID" 2>/dev/null | sed -n 's/^Command=//p' | head -n 1)
+    _fp_cmd=$(flatpak info $_flatpak_scope -m "$FLATPAK_ID" 2>/dev/null | sed -n 's/^Command=//p' | head -n 1)
     _fp_cmd=${_fp_cmd%% *}
     _fp_cmd=${_fp_cmd##*/}
     [ -n "$_fp_cmd" ] || _fp_cmd=${PKG:-${FLATPAK_ID##*.}}
@@ -1335,7 +1411,7 @@ elif [ -n "$FLATPAK_ID" ]; then
         printf 'flatpak is not installed\n' >&2
         exit 1
     }
-    exec flatpak run "$FLATPAK_ID" "$@"
+    exec flatpak run $_flatpak_scope "$FLATPAK_ID" "$@"
 elif [ -n "$PKG" ] && command -v "$PKG" >/dev/null 2>&1; then
     nohup "$PKG" >/dev/null 2>&1 &
 fi

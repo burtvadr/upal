@@ -19,6 +19,7 @@ PORTABLE_ROOT=$(cd -P -- "$(dirname -- "$0")" && command pwd -P)
 PKG=""
 PACKAGE_MANAGER="auto"
 FLATPAK_ID=""
+FLATPAK_SCOPE="user"
 BIN_NAMES=""
 DAT_SOURCE=""
 DAT_TARGET=""
@@ -60,6 +61,7 @@ KILL_TERMINAL="yes"
 | `PKG` | `""` | Package or packages to install, space-separated. Empty means search for `BIN_NAMES`, or use the runner filename. |
 | `PACKAGE_MANAGER` | `auto` | `auto`/`native` (PackageKit chain), `distro`, `flatpak`, `snap`, `nix`, `brew`, `toolpak`, `pkgit`, `cpak`, or `none`. |
 | `FLATPAK_ID` | `""` | Flatpak application ID. Setting it selects the Flatpak profile when `PACKAGE_MANAGER` is `auto`; `dat/` and `bin/` select the portable sides. |
+| `FLATPAK_SCOPE` | `user` | `user` or `system`. Scope for the flathub remote, app install, and launch. User scope never needs root. |
 | `BIN_NAMES` | `""` | Commands to check, link, and run. Empty means the words in `PKG`, or the runner filename. |
 | `DAT_SOURCE` | `""` | Portable data directory. Empty means detect; if `DAT_TARGET` is set, defaults to `$PORTABLE_ROOT/dat`. |
 | `DAT_TARGET` | `""` | Host data path. Empty means XDG mapping when the data directory is XDG-shaped, otherwise no redirection. |
@@ -316,7 +318,7 @@ Packages are installed one per word, so `PKG="adb fastboot heimdall scrcpy"` loo
 
 ## Flatpak profile
 
-Only `FLATPAK_ID` is required. The engine fills the standardized paths, and the presence of `dat/` or `bin/` selects the portable sides. Set `PACKAGE_MANAGER` only if you want to override the backend.
+Only `FLATPAK_ID` is required. `FLATPAK_SCOPE` defaults to `user`; set it to `system` for a system-wide install. The engine fills the standardized paths, and the presence of `dat/` or `bin/` selects the portable sides. Set `PACKAGE_MANAGER` only if you want to override the backend.
 
 | Path | User install | System install |
 |---|---|---|
@@ -327,16 +329,20 @@ Only `FLATPAK_ID` is required. The engine fills the standardized paths, and the 
 Derived values:
 
 - `PACKAGE_MANAGER="flatpak"` when it was `auto`.
+- `FLATPAK_SCOPE` is `user` by default; `system` uses the system installation.
 - `DAT_TARGET="$HOME/.var/app/$FLATPAK_ID"` when `DAT_SOURCE` exists and `DAT_TARGET` is empty.
 - `DAT_SOURCE` defaults to `$PORTABLE_ROOT/dat`; no `dat/` means no data mapping.
 - `BIN_SOURCE` defaults to `$PORTABLE_ROOT/bin`; no `bin/` means no launcher.
-- If `bin/` exists, `bin/<command>` becomes a launcher that runs `flatpak run "$FLATPAK_ID" "$@"`. The command name comes from the app's `Command=` metadata.
-- The Flatpak deployment is never linked or modified. `flatpak run` resolves the installation scope, architecture, branch, and active deployment.
+- If `bin/` exists, `bin/<command>` becomes a launcher that runs `flatpak run --user|--system "$FLATPAK_ID" "$@"`. The command name comes from the app's `Command=` metadata.
+- The Flatpak deployment is never linked or modified. `flatpak run` resolves the architecture, branch, and active deployment.
 - Desktop entry and icon come from the Flatpak export when present.
-- `PKG` is not used; a missing app is installed with `flatpak install`.
+- `PKG` is not used; a missing app is installed with `flatpak install --user|--system -y flathub "$FLATPAK_ID"`.
+
+If `flatpak` is missing, the runner tries `pkgcli`, then `pkcon`, then the distro package manager. It adds the flathub remote when needed and asks for a reboot after installing Flatpak itself. The reboot message exits the run; launch it again after rebooting.
 
 ```sh
 FLATPAK_ID="com.developer.App"
+FLATPAK_SCOPE="user"
 ```
 
 ```text
@@ -348,7 +354,7 @@ MyApp/
 
 Create only `dat/` to preserve data, only `bin/` to keep a portable launcher, or both. The runner does not create the side you omit. A previously tracked side that disappears triggers rename recovery; if you intend to stop preserving it, remove the matching `source-<key>-dat` or `source-<key>-bin` state file.
 
-The data path is the same for user and system installs. User installs never need root. Some applications write outside `~/.var/app/$FLATPAK_ID`; add those paths explicitly with the `redirect` helper in a hook. Heroic's `~/Games` is the common example.
+The data path is the same for user and system installs. User scope never needs root; system scope may need administrator authentication. Some applications write outside `~/.var/app/$FLATPAK_ID`; add those paths explicitly with the `redirect` helper in a hook. Heroic's `~/Games` is the common example.
 
 ## Detection
 

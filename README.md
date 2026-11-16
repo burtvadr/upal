@@ -125,12 +125,16 @@ MyApp/
 
 ```sh
 FLATPAK_ID="com.developer.App"
+FLATPAK_SCOPE="user"   # or "system"
 ```
 
 The runner:
 
-- installs with `flatpak install` when the app is missing;
-- runs with `flatpak run "$FLATPAK_ID"`;
+- checks for `flatpak`; if missing, tries `pkgcli`, then `pkcon`, then the distro package manager;
+- adds the flathub remote when it is missing, using `FLATPAK_SCOPE`;
+- asks for a reboot after installing flatpak itself, then exits so the next run starts cleanly;
+- installs the app with `flatpak install --user|--system -y flathub` when it is missing;
+- runs with `flatpak run --user|--system "$FLATPAK_ID"`;
 - if `dat/` exists, links `~/.var/app/$FLATPAK_ID` to it;
 - if `bin/` exists, creates `bin/<command>` as a launcher for `flatpak run`, using the app's `Command=` metadata;
 - never copies, links, or modifies the Flatpak deployment;
@@ -138,11 +142,11 @@ The runner:
 - creates no launcher when `bin/` is absent;
 - uses Flatpak's exported desktop entry and icon; a portable `.desktop` or icon is optional.
 
-`PACKAGE_MANAGER` may be omitted; setting `FLATPAK_ID` selects the Flatpak profile when the manager is `auto`.
+`PACKAGE_MANAGER` may be omitted; setting `FLATPAK_ID` selects the Flatpak profile when the manager is `auto`. `FLATPAK_SCOPE` defaults to `user`; `system` uses the system-wide installation and may require administrator authentication.
 
 ```text
 ~/.var/app/com.developer.App -> ~/Apps/MyApp/dat
-~/Apps/MyApp/bin/<command>  # exec flatpak run "com.developer.App" "$@"
+~/Apps/MyApp/bin/<command>  # exec flatpak run --user "com.developer.App" "$@"
 ```
 
 The data path is the same for user and system installs. Flatpak owns the immutable app files, so `bin/` is a portable launcher, not a copy of the deployment. Some applications write outside `~/.var/app/$FLATPAK_ID`: Heroic creates `~/Games`. Add those explicitly if you want them portable; they are not automatic.
