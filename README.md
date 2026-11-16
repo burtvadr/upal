@@ -149,7 +149,7 @@ The runner:
 ~/Apps/MyApp/bin/<command>  # exec flatpak run --user "com.developer.App" "$@"
 ```
 
-The data path is the same for user and system installs. Flatpak owns the immutable app files, so `bin/` is a portable launcher, not a copy of the deployment. Flatpak does not support symlinking an individual app installation directory (`~/.local/share/flatpak/app/$FLATPAK_ID` or `/var/lib/flatpak/app/$FLATPAK_ID`); the runner never does that. To relocate the whole Flatpak installation, use a custom installation or `FLATPAK_USER_DIR`, not a per-app symlink. The data directory `~/.var/app/$FLATPAK_ID` is separate; Flatpak's bind setup resolves symlinked data directories. Some applications write outside `~/.var/app/$FLATPAK_ID`: Heroic creates `~/Games`. Add those explicitly if you want them portable; they are not automatic.
+The data path is the same for user and system installs. Flatpak owns the immutable app files, so `bin/` is a portable launcher, not a copy of the deployment. Flatpak does not support symlinking an individual app installation directory (`~/.local/share/flatpak/app/$FLATPAK_ID` or `/var/lib/flatpak/app/$FLATPAK_ID`); the runner never does that. Symlinking the arch directory (`.../app/$FLATPAK_ID/$ARCH`) is not a workaround either: Flatpak stops listing the app, and update/uninstall cannot find it. To relocate the whole Flatpak installation, use a custom installation or `FLATPAK_USER_DIR`; to offload only one app, use a bind mount. The data directory `~/.var/app/$FLATPAK_ID` is separate, and Flatpak resolves a symlinked data directory (tested with Flatpak 1.16). Some applications write outside `~/.var/app/$FLATPAK_ID`: Heroic creates `~/Games`. Add those explicitly if you want them portable; they are not automatic.
 
 ## Methods
 
