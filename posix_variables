@@ -895,6 +895,64 @@ EOF
     own "$1"
 }
 
+# Find a Flatpak app icon in the deployment or exported theme.
+flatpak_icon_find() {
+    _base=$1
+    _icon_name=$2
+    [ -d "$_base/share/icons" ] || return 1
+    for _ext in svg png xpm; do
+        for _dir in scalable 512x512 256x256 128x128 96x96 64x64 48x48 32x32 24x24 22x22 16x16; do
+            _f="$_base/share/icons/hicolor/$_dir/apps/$_icon_name.$_ext"
+            if [ -f "$_f" ]; then
+                printf '%s\n' "$_f"
+                return 0
+            fi
+        done
+    done
+    _f=$(find "$_base/share/icons" -type f -name "$_icon_name.*" 2>/dev/null | head -n 1)
+    [ -n "$_f" ] && { printf '%s\n' "$_f"; return 0; }
+    return 1
+}
+
+flatpak_icon_path() {
+    _deploy=${_flatpak_deploy:-$(flatpak info $_flatpak_scope -l "$FLATPAK_ID" 2>/dev/null)}
+    [ -n "$_deploy" ] || return 1
+
+    _desktop="$_deploy/export/share/applications/$FLATPAK_ID.desktop"
+    [ -f "$_desktop" ] || _desktop="$_deploy/files/share/applications/$FLATPAK_ID.desktop"
+    _icon_name=""
+    if [ -f "$_desktop" ]; then
+        _icon_name=$(sed -n 's/^Icon=//p' "$_desktop" | head -n 1)
+    fi
+    [ -n "$_icon_name" ] || _icon_name=$FLATPAK_ID
+
+    case "$_icon_name" in
+        /*)
+            if [ -f "$_icon_name" ]; then
+                printf '%s\n' "$_icon_name"
+                return 0
+            fi
+            ;;
+    esac
+
+    for _base in "$_deploy/export" "$_deploy/files"; do
+        _f=$(flatpak_icon_find "$_base" "$_icon_name") && { printf '%s\n' "$_f"; return 0; }
+        if [ "$_icon_name" != "$FLATPAK_ID" ]; then
+            _f=$(flatpak_icon_find "$_base" "$FLATPAK_ID") && { printf '%s\n' "$_f"; return 0; }
+        fi
+    done
+
+    _root=$(dirname "$(dirname "$(dirname "$(dirname "$(dirname "$_deploy")")")")")
+    if [ -d "$_root/exports" ]; then
+        _f=$(flatpak_icon_find "$_root/exports" "$_icon_name") && { printf '%s\n' "$_f"; return 0; }
+        if [ "$_icon_name" != "$FLATPAK_ID" ]; then
+            _f=$(flatpak_icon_find "$_root/exports" "$FLATPAK_ID") && { printf '%s\n' "$_f"; return 0; }
+        fi
+    fi
+
+    return 1
+}
+
 if [ -n "$FLATPAK_ID" ] && [ -e "$BIN_SOURCE" ]; then
     _fp_cmd=$(flatpak info $_flatpak_scope -m "$FLATPAK_ID" 2>/dev/null | sed -n 's/^Command=//p' | head -n 1)
     _fp_cmd=${_fp_cmd%% *}
@@ -1266,7 +1324,7 @@ else
         elif [ -n "$ICON" ] && [ -e "$ICON" ]; then
             _icon="$ICON"
         else
-            _icon="${NAME:-$PKG}"
+            _icon="${FLATPAK_ID:-${NAME:-$PKG}}"
         fi
         for file in "$DESKTOP_FILE_SOURCE"/"$DESKTOP_FILE_NAME"; do
             [ -e "$file" ] || continue
@@ -1377,12 +1435,18 @@ fi
 
 # gio metadata is per-user; skip it when running as root
 if [ "$(id -u)" -ne 0 ] && command -v gio >/dev/null 2>&1; then
-    if [ -n "$ICON" ] && [ -e "$ICON" ]; then
-        _icon_uri="file://$(readlink -f -- "$ICON")"
+    _gio_icon=$ICON
+    if [ -z "$_gio_icon" ] && [ -n "$FLATPAK_ID" ]; then
+        _gio_icon=$(flatpak_icon_path) || _gio_icon=""
+    fi
+    if [ -n "$_gio_icon" ] && [ -e "$_gio_icon" ]; then
+        _icon_uri="file://$(readlink -f -- "$_gio_icon")"
         gio set -t string "$PORTABLE_ROOT" metadata::custom-icon "$_icon_uri"
+        [ -d "$PORTABLE_ROOT/bin" ] && [ ! -L "$PORTABLE_ROOT/bin" ] && gio set -t string "$PORTABLE_ROOT/bin" metadata::custom-icon "$_icon_uri"
         [ -n "$DAT_TARGET" ] && gio set -t string "$DAT_TARGET" metadata::custom-icon "$_icon_uri"
     else
         gio set -t unset "$PORTABLE_ROOT" metadata::custom-icon 2>/dev/null
+        [ -d "$PORTABLE_ROOT/bin" ] && [ ! -L "$PORTABLE_ROOT/bin" ] && gio set -t unset "$PORTABLE_ROOT/bin" metadata::custom-icon 2>/dev/null
         [ -n "$DAT_TARGET" ] && gio set -t unset "$DAT_TARGET" metadata::custom-icon 2>/dev/null
     fi
 fi
