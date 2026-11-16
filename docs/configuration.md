@@ -337,7 +337,7 @@ Derived values:
 - `BIN_SOURCE` defaults to `$PORTABLE_ROOT/bin`; no `bin/` means no launcher.
 - If `bin/` exists, `bin/<command>` becomes a launcher that runs `flatpak run --user|--system "$FLATPAK_ID" "$@"`. The command name comes from the app's `Command=` metadata.
 - If `bin/` exists, `BIN_TARGET` becomes the active deployment's `files/bin` (or `files`), and `bin/$FLATPAK_ID` becomes a read-only reference symlink to it. The link uses `active`, so it follows Flatpak updates.
-- If no portable icon is present, the exported Flatpak icon is used for the `gio` folder metadata on the portable root, `bin/`, and the data target. The icon name comes from the exported desktop file's `Icon=` value, falling back to `$FLATPAK_ID`.
+- If no portable icon is present, the exported Flatpak icon is used for the `gio` folder metadata on the portable root, `BIN_TARGET`, and the data target. The icon name comes from the exported desktop file's `Icon=` value, falling back to `$FLATPAK_ID`.
 - The Flatpak installation is not modified. `flatpak run` resolves the architecture, branch, and active deployment.
 - Desktop entry and icon come from the Flatpak export when present.
 - `PKG` is not used; a missing app is installed with `flatpak install --user|--system -y flathub "$FLATPAK_ID"`.

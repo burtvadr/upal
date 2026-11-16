@@ -1442,12 +1442,15 @@ if [ "$(id -u)" -ne 0 ] && command -v gio >/dev/null 2>&1; then
     if [ -n "$_gio_icon" ] && [ -e "$_gio_icon" ]; then
         _icon_uri="file://$(readlink -f -- "$_gio_icon")"
         gio set -t string "$PORTABLE_ROOT" metadata::custom-icon "$_icon_uri"
-        [ -d "$PORTABLE_ROOT/bin" ] && [ ! -L "$PORTABLE_ROOT/bin" ] && gio set -t string "$PORTABLE_ROOT/bin" metadata::custom-icon "$_icon_uri"
+        [ -n "$BIN_TARGET" ] && [ -d "$BIN_TARGET" ] && gio set -t string "$BIN_TARGET" metadata::custom-icon "$_icon_uri"
         [ -n "$DAT_TARGET" ] && gio set -t string "$DAT_TARGET" metadata::custom-icon "$_icon_uri"
+        # Older versions set the icon on the portable bin; that is not a target.
+        [ -d "$PORTABLE_ROOT/bin" ] && [ ! -L "$PORTABLE_ROOT/bin" ] && gio set -t unset "$PORTABLE_ROOT/bin" metadata::custom-icon 2>/dev/null
     else
         gio set -t unset "$PORTABLE_ROOT" metadata::custom-icon 2>/dev/null
-        [ -d "$PORTABLE_ROOT/bin" ] && [ ! -L "$PORTABLE_ROOT/bin" ] && gio set -t unset "$PORTABLE_ROOT/bin" metadata::custom-icon 2>/dev/null
+        [ -n "$BIN_TARGET" ] && [ -d "$BIN_TARGET" ] && gio set -t unset "$BIN_TARGET" metadata::custom-icon 2>/dev/null
         [ -n "$DAT_TARGET" ] && gio set -t unset "$DAT_TARGET" metadata::custom-icon 2>/dev/null
+        [ -d "$PORTABLE_ROOT/bin" ] && [ ! -L "$PORTABLE_ROOT/bin" ] && gio set -t unset "$PORTABLE_ROOT/bin" metadata::custom-icon 2>/dev/null
     fi
 fi
 
