@@ -104,7 +104,7 @@ Once a managed source exists, the runner remembers it under `${XDG_STATE_HOME:-$
 
 A match updates the source path and repairs the links. No match, or a tie, stops the run and prints the closest candidates. A broken target symlink is removed first with `rm -f`; it is never followed. The runner does not create an empty source when a source was known before, and it never replaces a valid target symlink with one. On a first run it may create `DAT_SOURCE` to adopt existing host data.
 
-Remove `source-<key>-<role>` from the state directory to start fresh. The state stays outside the portable folder, so the folder remains one manager file plus data.
+Remove `source-<key>-<role>` from the state directory to start fresh. The key is the portable root's device and inode; a same-filesystem rename keeps the history, while a cross-filesystem move rebuilds it on the next run. The state stays outside the portable folder, so the folder remains one manager file plus data.
 
 ## Methods
 

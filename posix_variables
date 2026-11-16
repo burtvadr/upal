@@ -107,7 +107,7 @@ _state_base="${XDG_STATE_HOME:-$HOME/.local/state}/upal"
 _icon_key=${PKG:-${NAME:-$(printf '%s' "$PORTABLE_ROOT" | cksum | cut -d' ' -f1)}}
 _icon_key=$(printf '%s' "$_icon_key" | tr -c 'A-Za-z0-9._-' '_')
 _icon_state="$_state_base/icon-$_icon_key"
-_source_key=$(printf '%s' "$PORTABLE_ROOT" | cksum | cut -d' ' -f1)
+_source_key=$(stat -c '%d-%i' "$PORTABLE_ROOT" 2>/dev/null) || _source_key=$(printf '%s' "$PORTABLE_ROOT" | cksum | cut -d' ' -f1)
 
 icon_state_field() {
     [ -f "$_icon_state" ] || return 1

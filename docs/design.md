@@ -57,7 +57,7 @@ This is why the data mapping is the center of the contract and the binary mode i
 
 ## Renamed sources
 
-The folder is movable, and so is anything inside it. The runner records each managed source directory (`DAT_SOURCE`, `BIN_SOURCE`, a custom `DESKTOP_FILE_SOURCE`) by device, inode, and top-level names and types in `${XDG_STATE_HOME:-$HOME/.local/state}/upal/source-<key>-<role>`. Moving the whole folder changes the key, but the source still exists, so the state is rebuilt. The state never lives inside the portable folder.
+The folder is movable, and so is anything inside it. The runner records each managed source directory (`DAT_SOURCE`, `BIN_SOURCE`, a custom `DESKTOP_FILE_SOURCE`) by device, inode, and top-level names and types in `${XDG_STATE_HOME:-$HOME/.local/state}/upal/source-<key>-<role>`. The key is the root's device and inode. A same-filesystem rename keeps the key, so renaming the root and a source inside it in the same step both recover. A cross-filesystem move changes the key, but the sources move with the folder and exist, so the state is rebuilt on the next run. The state never lives inside the portable folder.
 
 At launch, a missing source triggers recovery. The runner scans the old parent first, then the folder three levels deep. An exact device/inode match is conclusive: a rename or move on the same filesystem keeps the inode. Otherwise it scores candidates by top-level name and type overlap, requires at least two matching entries and 65%, and requires a 15-point margin over the second candidate. The winning path replaces the configured one, the state is updated, and the target link is recreated.
 
