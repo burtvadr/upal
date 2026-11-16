@@ -242,7 +242,7 @@ The target engine enforces these rules. The reference template implements an ear
 - A missing managed source is never replaced by an empty directory. The runner removes a broken target link, then tries inode and content matching; if it cannot identify the renamed directory with confidence, it stops.
 - A broken link is removed with `rm -f` on the link itself. The destination is never followed or deleted, and no recursive delete is used.
 - A real file or directory is never replaced by a symlink unless the backup succeeds. If a target needs root, the runner stops and asks you to re-run it with sudo; it never invokes sudo itself.
-- Cleanup only touches links whose name and target belong to this runner. No broad `rm "$CMD_TARGET"/*`. A link that already resolves to the same inode is left untouched, even if it points through another path.
+- Broken symlinks directly inside the host link directories are removed on each run: the data target's parent (for example `~/.var/app`), the command directory, `DESKTOP_FILE_TARGET`, and the icon target. This can include stale links from other apps. Real files, valid links, the portable root, bin sources, and app binary targets are never touched. Each entry is checked as a symlink with a missing target; there is no broad `rm "$DIR"/*`.
 - Every run is idempotent.
 - `UPAL_DRY_RUN=1` prints the planned actions and changes nothing. `UPAL_VERBOSE=1` prints detection results.
 - The filesystem check runs once, on the portable root, and exits cleanly. It does not kill the terminal from a subshell.
