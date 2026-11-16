@@ -935,13 +935,25 @@ if [ -n "$ENTRIES" ]; then
         fi
 
         _cmd=""
-        if [ -n "$_exec" ] && [ -d "$CMD_TARGET" ]; then
+        if [ -n "$_exec" ]; then
             case "$_bindir" in
                 /*) _src=$_bindir/$_exec ;;
                 *)  _src=$PORTABLE_ROOT/${_bindir:+$_bindir/}$_exec ;;
             esac
-            _cmd="${PKG:-$NAME}-$_name"
-            link_or_backup "$_src" "$CMD_TARGET/$_cmd" || _cmd=""
+            _link_src=$_src
+            if [ -n "$BIN_TARGET" ] && [ -d "$BIN_TARGET" ]; then
+                _appdir="$BIN_TARGET/$_name"
+                mkdir -p "$_appdir" || need_root "create $_appdir"
+                own_path "$_appdir"
+                _appexe="$_appdir/$(basename -- "$_exec")"
+                if link_or_backup "$_src" "$_appexe"; then
+                    _link_src=$_appexe
+                fi
+            fi
+            if [ -d "$CMD_TARGET" ]; then
+                _cmd="${PKG:-$NAME}-$_name"
+                link_or_backup "$_link_src" "$CMD_TARGET/$_cmd" || _cmd=""
+            fi
         fi
 
         if [ -n "$_desktop" ]; then
@@ -979,6 +991,14 @@ if [ -n "$ENTRIES" ]; then
     if [ -n "$CMD_TARGET" ]; then
         mkdir -p "$CMD_TARGET" || need_root "create $CMD_TARGET"
         own_path "$CMD_TARGET"
+    fi
+    if [ -n "$BIN_TARGET" ]; then
+        if [ -e "$BIN_TARGET" ] && [ ! -d "$BIN_TARGET" ]; then
+            printf 'BIN_TARGET must be a directory for multi-entry suites: %s\n' "$BIN_TARGET" >&2
+            exit 1
+        fi
+        mkdir -p "$BIN_TARGET" || need_root "create $BIN_TARGET"
+        own_path "$BIN_TARGET"
     fi
     _entries_icon=0
     while IFS='|' read -r _name _bindir _exec _desktop _icon _icon_id; do
@@ -1033,6 +1053,26 @@ fi
 # Clean up broken command links if sources were removed
 if [ -n "$BIN_SOURCE" ] && [ -n "$CMD_TARGET" ] && [ -d "$CMD_TARGET" ]; then
     for link in "$CMD_TARGET"/*; do
+        [ -L "$link" ] || continue
+        [ -e "$link" ] && continue
+        _link_target=$(readlink "$link")
+        case "$_link_target" in
+            "$BIN_SOURCE"/*) rm -f -- "$link" ;;
+            *)
+                if [ -n "$BIN_TARGET" ]; then
+                    case "$_link_target" in "$BIN_TARGET"/*) rm -f -- "$link"; continue ;; esac
+                fi
+                if [ -n "$_old_bin" ]; then
+                    case "$_link_target" in "$_old_bin"/*) rm -f -- "$link" ;; esac
+                fi
+                ;;
+        esac
+    done
+fi
+
+# Clean up broken per-entry app binary links in BIN_TARGET/<entry>/
+if [ -n "$BIN_SOURCE" ] && [ -n "$BIN_TARGET" ] && [ -d "$BIN_TARGET" ]; then
+    for link in "$BIN_TARGET"/*/*; do
         [ -L "$link" ] || continue
         [ -e "$link" ] && continue
         _link_target=$(readlink "$link")

@@ -199,7 +199,7 @@ Any single image at the root, or in `ICON_SOURCE`, becomes the icon; the MIME ty
 
 ## Multi-entry suites
 
-A folder can hold several launchers. If `bin/` contains variant subdirectories, the engine detects them automatically; `ENTRIES` is the explicit override. Command links go to `CMD_TARGET`, a user PATH directory; `BIN_TARGET` is the host application binary directory and is not used for command links. See the configuration reference.
+A folder can hold several launchers. If `bin/` contains variant subdirectories, the engine detects them automatically; `ENTRIES` is the explicit override. Command links go to `CMD_TARGET`, a user PATH directory. If `BIN_TARGET` is set, each entry's executable is linked into `BIN_TARGET/<entry>/` and the command link points there; this avoids flattening variants into one app binary directory. See the configuration reference.
 
 ## Nautilus bundles (planned)
 
