@@ -28,6 +28,7 @@ BACKUP="yes"
 BIN_MODE="auto"
 BIN_SOURCE=""
 BIN_TARGET=""
+CMD_TARGET=""
 DESKTOP_FILE_SOURCE="$PORTABLE_ROOT"
 DESKTOP_FILE_TARGET="$HOME/.local/share/applications"
 DESKTOP_FILE_NAME=""
@@ -67,7 +68,8 @@ KILL_TERMINAL="yes"
 | `BACKUP` | `yes` | Adopted host data keeps a `<path>.bak` copy; a real conflict is kept as `<path>1`, `<path>2`. `no` aborts on conflict. |
 | `BIN_MODE` | `auto` | `auto`, `in`, `out`, or `copy`. |
 | `BIN_SOURCE` | `""` | Portable binary directory or single file. Empty means detect. |
-| `BIN_TARGET` | `""` | Host `PATH` directory or single file. Used by `out` only. Empty means the first writable user directory (`~/.local/bin`, then `~/bin`), then `/usr/local/bin` or `/usr/bin`. |
+| `BIN_TARGET` | `""` | Host application binary directory or single file, for example `/opt/app-bin`. Used by `out` only. Empty disables binary-out linking. This is not a PATH directory; command links use `CMD_TARGET`. |
+| `CMD_TARGET` | `""` | Directory for per-entry command symlinks. Empty auto-selects `~/.local/bin`, then `~/bin`, then `/usr/local/bin` or `/usr/bin`. Used only when `ENTRIES` is set. |
 | `DESKTOP_FILE_SOURCE` | `$PORTABLE_ROOT` | Where to find `*.desktop` files. |
 | `DESKTOP_FILE_TARGET` | `$HOME/.local/share/applications` | Where to link them. |
 | `DESKTOP_FILE_NAME` | `""` | Optional filter. Empty means all `*.desktop` files in the source. |
@@ -230,6 +232,8 @@ Leaves the host path alone. Use it to document a decision, or to disable a mappi
 
 Host-provided (`in`, or host mode with no `bin/`) is the default. `out` and `copy` are for offline use, a self-contained folder, or a locally compiled binary. Data portability does not depend on any of them.
 
+`BIN_TARGET` is the host application binary directory, not a PATH directory. Multi-entry command links are separate: they go to `CMD_TARGET`, a user-writable directory on `PATH`.
+
 `auto` inspects the contents:
 
 - symlinks in `bin/` → `in`;
@@ -253,16 +257,18 @@ bin/gimp -> /usr/bin/gimp
 ```
 
 ```sh
-# Folder-owned binaries, exposed on the host
+# Folder-owned binaries, exposed in the app binary directory
 BIN_MODE="out"
 BIN_SOURCE="$PORTABLE_ROOT/bin"
-BIN_TARGET=""
+BIN_TARGET="/opt/myapp-bin"
 ```
 
 ```text
-bin/gimp (real)
-~/.local/bin/gimp -> ~/Apps/GIMP/bin/gimp
+bin/myapp (real)
+/opt/myapp-bin/myapp -> ~/Apps/MyApp/bin/myapp
 ```
+
+The target is root-owned in this example, so the runner stops and asks for a rerun with sudo. For a user-owned application directory, use a path under `$HOME`.
 
 ```sh
 # Folder-owned binaries, no host changes
@@ -401,7 +407,7 @@ If `BIN_SOURCE` contains only subdirectories, the runner treats each subdirector
 - `myapp_stable.desktop` at the portable root, or `bin/stable/myapp.desktop`;
 - `myapp.svg` at the portable root, or `bin/stable/myapp.svg`.
 
-The header stays the normal one; no list is needed. Auto-detected entries share one icon (`Icon=myapp`) and each gets a `myapp-stable` command in `BIN_TARGET`. `DEFAULT_ENTRY` selects the default; otherwise the first entry. Set `LAUNCHER` to an external chooser to pick at launch; `run <entry>` bypasses it.
+The header stays the normal one; no list is needed. Auto-detected entries share one icon (`Icon=myapp`) and each gets a `myapp-stable` command in `CMD_TARGET`. `BIN_TARGET` remains the host application binary directory and is not used for these command links. `DEFAULT_ENTRY` selects the default; otherwise the first entry. Set `LAUNCHER` to an external chooser to pick at launch; `run <entry>` bypasses it.
 
 For a layout that does not follow the convention, set `ENTRIES` explicitly, one line per entry:
 
@@ -416,7 +422,7 @@ name|bindir|executable|desktop|icon|icon_id
 - `icon` — icon relative to the portable root; empty falls back to `ICON`.
 - `icon_id` — theme name and `Icon=` value; empty uses the package icon. Auto-detected entries share it; set explicit IDs only when the entries need different icons.
 
-For each entry the runner installs the icon, links the desktop file, removes `TryExec=`, sets `Icon=<icon_id>`, creates `<pkg>-<name>` in `BIN_TARGET` pointing at the executable, and rewrites `Exec=` to that command plus the original field codes. If the bin directory is not on `PATH`, the absolute link path is used. `run <name> [args]` launches that entry; with no name, `DEFAULT_ENTRY` is used, then the first entry. If an entry has no executable and `app_run` is defined, the hook is called instead.
+For each entry the runner installs the icon, links the desktop file, removes `TryExec=`, sets `Icon=<icon_id>`, creates `<pkg>-<name>` in `CMD_TARGET` pointing at the executable, and rewrites `Exec=` to that command plus the original field codes. If `CMD_TARGET` is not on `PATH`, the absolute link path is used. `run <name> [args]` launches that entry; with no name, `DEFAULT_ENTRY` is used, then the first entry. If an entry has no executable and `app_run` is defined, the hook is called instead.
 
 Example:
 

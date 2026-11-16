@@ -199,7 +199,7 @@ PKG="adb fastboot heimdall scrcpy"
 BIN_NAMES="adb fastboot heimdall scrcpy"
 BIN_MODE="out"
 BIN_SOURCE="$PORTABLE_ROOT/bin"
-BIN_TARGET=""
+BIN_TARGET="$HOME/.local/opt/adb-bin"
 DAT_SOURCE="$PORTABLE_ROOT/dat"
 DAT_TARGET="$HOME/.android"
 DAT_METHOD="link"
@@ -219,7 +219,7 @@ app_post_link() {
 }
 ```
 
-`BIN_TARGET=""` means the first writable user bin directory, usually `~/.local/bin`, then `/usr/local/bin` or `/usr/bin`. The runner links each executable there and backs up anything it replaces as `name1`, `name2`, and so on. Support files (`lib64`, `scrcpy-server`, the notices) stay in `bin/` next to the executables; only executable files are linked.
+`BIN_TARGET` is the host application binary directory. In this example it is `$HOME/.local/opt/adb-bin`; the runner links each executable there and backs up anything it replaces as `name1`, `name2`, and so on. Add that directory to `PATH` if the desktop files should find `adb`, `fastboot`, `heimdall`, and `scrcpy` by name. Support files (`lib64`, `scrcpy-server`, the notices) stay in `bin/` next to the executables; only executable files are linked.
 
 Man-page linking writes to `/usr/share/man`, so the first run stops and asks for a rerun with sudo. Set `MAN=""` if you do not want that.
 

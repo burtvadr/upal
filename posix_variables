@@ -14,6 +14,7 @@ DAT_TARGET=""
 BACKUP="yes"
 BIN_SOURCE="$PORTABLE_ROOT/bin"
 BIN_TARGET=""
+CMD_TARGET=""
 DESKTOP_FILE_NAME=""
 DESKTOP_FILE_SOURCE="$PORTABLE_ROOT"
 DESKTOP_FILE_TARGET="$HOME/.local/share/applications"
@@ -737,7 +738,9 @@ if [ -z "$ENTRIES" ] && [ -d "$BIN_SOURCE" ]; then
     fi
 fi
 
-# Defining BIN_TARGET
+# Defining CMD_TARGET
+# Command symlinks for multi-entry suites go to a user-writable PATH directory.
+# BIN_TARGET is the host application binary directory, not a PATH directory.
 in_path() {
     case ":$PATH:" in
         *":$1:"*) return 0 ;;
@@ -746,27 +749,29 @@ in_path() {
 }
 
 # Prefer a writable directory in the user's home; fall back to the system PATH
-if [ -z "$BIN_TARGET" ]; then
+if [ -n "$ENTRIES" ] && [ -z "$CMD_TARGET" ]; then
     for d in "$HOME/.local/bin" "$HOME/bin"; do
         if [ -d "$d" ]; then
-            [ -w "$d" ] && { BIN_TARGET=$d; break; }
+            [ -w "$d" ] && { CMD_TARGET=$d; break; }
         elif mkdir -p "$d" 2>/dev/null; then
-            BIN_TARGET=$d
-            own_path "$BIN_TARGET"
+            CMD_TARGET=$d
+            own_path "$CMD_TARGET"
             break
         fi
     done
 fi
-if [ -z "$BIN_TARGET" ]; then
+if [ -n "$ENTRIES" ] && [ -z "$CMD_TARGET" ]; then
     for d in "/usr/local/bin" "/usr/bin"; do
-        [ -d "$d" ] && { BIN_TARGET=$d; break; }
+        [ -d "$d" ] && { CMD_TARGET=$d; break; }
     done
 fi
 
-[ -n "${BIN_TARGET:-}" ] || {
-    printf '%s\n' "no writable bin directory found" >&2
-    exit 1
-}
+if [ -n "$ENTRIES" ]; then
+    [ -n "${CMD_TARGET:-}" ] || {
+        printf '%s\n' "no writable command directory found" >&2
+        exit 1
+    }
+fi
 
 # backup_target <path> [bak|number]
 # Move path to path.bak, or to path1, path2, ... when the mode is number.
@@ -930,13 +935,13 @@ if [ -n "$ENTRIES" ]; then
         fi
 
         _cmd=""
-        if [ -n "$_exec" ] && [ -d "$BIN_TARGET" ]; then
+        if [ -n "$_exec" ] && [ -d "$CMD_TARGET" ]; then
             case "$_bindir" in
                 /*) _src=$_bindir/$_exec ;;
                 *)  _src=$PORTABLE_ROOT/${_bindir:+$_bindir/}$_exec ;;
             esac
             _cmd="${PKG:-$NAME}-$_name"
-            link_or_backup "$_src" "$BIN_TARGET/$_cmd" || _cmd=""
+            link_or_backup "$_src" "$CMD_TARGET/$_cmd" || _cmd=""
         fi
 
         if [ -n "$_desktop" ]; then
@@ -949,7 +954,7 @@ if [ -n "$ENTRIES" ]; then
                 _fields=$(awk -F'[[:space:]]+' '/^Exec=/ { for (i=1; i<=NF; i++) if ($i ~ /^%[fFuUdDnNickvm]$/) printf "%s ", $i }' "$_file" | sed 's/[[:space:]]*$//')
                 if [ -n "$_cmd" ]; then
                     _exec_value=$_cmd
-                    in_path "$BIN_TARGET" || _exec_value=$BIN_TARGET/$_cmd
+                    in_path "$CMD_TARGET" || _exec_value=$CMD_TARGET/$_cmd
                 else
                     _exec_value=$SELF
                 fi
@@ -971,8 +976,10 @@ if [ -n "$ENTRIES" ]; then
 
     mkdir -p "$DESKTOP_FILE_TARGET" || need_root "create $DESKTOP_FILE_TARGET"
     own_path "$DESKTOP_FILE_TARGET"
-    mkdir -p "$BIN_TARGET" || need_root "create $BIN_TARGET"
-    own_path "$BIN_TARGET"
+    if [ -n "$CMD_TARGET" ]; then
+        mkdir -p "$CMD_TARGET" || need_root "create $CMD_TARGET"
+        own_path "$CMD_TARGET"
+    fi
     _entries_icon=0
     while IFS='|' read -r _name _bindir _exec _desktop _icon _icon_id; do
         [ -n "$_name" ] || continue
@@ -1023,17 +1030,17 @@ else
     fi
 fi
 
-# Clean up broken symlinks if sources were removed
-if [ -n "$BIN_SOURCE" ] && [ -d "$BIN_TARGET" ]; then
-    for link in "$BIN_TARGET"/*; do
+# Clean up broken command links if sources were removed
+if [ -n "$BIN_SOURCE" ] && [ -n "$CMD_TARGET" ] && [ -d "$CMD_TARGET" ]; then
+    for link in "$CMD_TARGET"/*; do
         [ -L "$link" ] || continue
         [ -e "$link" ] && continue
         _link_target=$(readlink "$link")
         case "$_link_target" in
-            "$BIN_SOURCE"/*) rm -f "$link" ;;
+            "$BIN_SOURCE"/*) rm -f -- "$link" ;;
             *)
                 if [ -n "$_old_bin" ]; then
-                    case "$_link_target" in "$_old_bin"/*) rm -f "$link" ;; esac
+                    case "$_link_target" in "$_old_bin"/*) rm -f -- "$link" ;; esac
                 fi
                 ;;
         esac
@@ -1060,7 +1067,7 @@ fi
 # Link binaries from BIN_SOURCE to BIN_TARGET
 # BIN_SOURCE can be a directory or a single file
 # BIN_TARGET can be a directory or a single file path
-if [ -z "$ENTRIES" ] && [ -d "$BIN_SOURCE" ]; then
+if [ -z "$ENTRIES" ] && [ -n "$BIN_TARGET" ] && [ -d "$BIN_SOURCE" ]; then
     # BIN_SOURCE is a directory - link all executables
     mkdir -p "$BIN_TARGET" || need_root "create $BIN_TARGET"
     own_path "$BIN_TARGET"
@@ -1071,7 +1078,7 @@ if [ -z "$ENTRIES" ] && [ -d "$BIN_SOURCE" ]; then
         target="$BIN_TARGET/$name"
         link_or_backup "$f" "$target"
     done
-elif [ -z "$ENTRIES" ] && { [ -f "$BIN_SOURCE" ] || [ -L "$BIN_SOURCE" ]; }; then
+elif [ -z "$ENTRIES" ] && [ -n "$BIN_TARGET" ] && { [ -f "$BIN_SOURCE" ] || [ -L "$BIN_SOURCE" ]; }; then
     # BIN_SOURCE is a single file
     if [ -d "$BIN_TARGET" ]; then
         # BIN_TARGET is a directory - link into it

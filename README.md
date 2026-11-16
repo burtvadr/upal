@@ -76,7 +76,7 @@ The reference template uses `PKG` as the command name. The target contract adds 
 
 Precedence, highest first:
 
-1. **Explicit header values** — `DAT_SOURCE`, `DAT_TARGET`, `BIN_SOURCE`, `BIN_TARGET`.
+1. **Explicit header values** — `DAT_SOURCE`, `DAT_TARGET`, `BIN_SOURCE`, `BIN_TARGET`, `CMD_TARGET`.
 2. **Contents** — symlinks in `bin/` mean host-owned binaries; real files mean folder-owned binaries; a directory with `config`, `data`, `state`, or `cache` subdirectories is data.
 3. **Name assumptions** — `dat`, `data`, `dados`, `bin`, `binaries`, and friends, configurable with `LANG_INFERRING_*`.
 4. **Defaults** — no `bin/` means run from `PATH`; no data target means no data redirection.
@@ -199,7 +199,7 @@ Any single image at the root, or in `ICON_SOURCE`, becomes the icon; the MIME ty
 
 ## Multi-entry suites
 
-A folder can hold several launchers. If `bin/` contains variant subdirectories, the engine detects them automatically; `ENTRIES` is the explicit override. See the configuration reference.
+A folder can hold several launchers. If `bin/` contains variant subdirectories, the engine detects them automatically; `ENTRIES` is the explicit override. Command links go to `CMD_TARGET`, a user PATH directory; `BIN_TARGET` is the host application binary directory and is not used for command links. See the configuration reference.
 
 ## Nautilus bundles (planned)
 
@@ -223,7 +223,7 @@ The target engine enforces these rules. The reference template implements an ear
 - A missing managed source is never replaced by an empty directory. The runner removes a broken target link, then tries inode and content matching; if it cannot identify the renamed directory with confidence, it stops.
 - A broken link is removed with `rm -f` on the link itself. The destination is never followed or deleted, and no recursive delete is used.
 - A real file or directory is never replaced by a symlink unless the backup succeeds. If a target needs root, the runner stops and asks you to re-run it with sudo; it never invokes sudo itself.
-- Cleanup only touches links whose name and target belong to this runner. No broad `rm "$BIN_TARGET"/*`. A link that already resolves to the same inode is left untouched, even if it points through another path.
+- Cleanup only touches links whose name and target belong to this runner. No broad `rm "$CMD_TARGET"/*`. A link that already resolves to the same inode is left untouched, even if it points through another path.
 - Every run is idempotent.
 - `UPAL_DRY_RUN=1` prints the planned actions and changes nothing. `UPAL_VERBOSE=1` prints detection results.
 - The filesystem check runs once, on the portable root, and exits cleanly. It does not kill the terminal from a subshell.

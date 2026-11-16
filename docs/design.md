@@ -31,7 +31,7 @@ redirect <portable> <host> <method>
 
 `copy` is a one-time snapshot. `copy-sync` is the two-way hack: host changes are rsynced back into the folder at launch, then the folder is copied to the host before the app starts. It does not resolve conflicts and does not propagate deletions; it is the last resort after `link` and `env`.
 
-Binaries use the same idea with a different unit: a command name, a source directory, and a target directory. `BIN_MODE` decides whether the folder owns the binaries or only links to the host's.
+Binaries use the same idea with a different unit: a command name, a source directory, and a target directory. `BIN_MODE` decides whether the folder owns the binaries or only links to the host's. `BIN_TARGET` is the host application binary directory, such as `/opt/app-bin`. Multi-entry command links are a separate concept and go to `CMD_TARGET`, a user-writable directory on `PATH`.
 
 ## Lifecycle
 
@@ -131,7 +131,7 @@ The runner does not learn Docker. `app_run` starts the stack and opens the brows
 
 ## Multi-entry folders
 
-A folder can hold several launchers. If `bin/` contains only variant subdirectories, the engine detects each one and looks for `<PKG>-launcher` or `<PKG>`, `<PKG>_<name>.desktop`, and `<PKG>.svg` at the root (or in the variant directory). `DEFAULT_ENTRY` selects the default; otherwise the first entry. `ENTRIES` is the explicit override for layouts that do not follow the convention: it maps a name to a binary directory, an executable, a desktop file, and an icon. Either way, auto-detected entries share one icon, each desktop `Exec=` becomes `<pkg>-<name>`, and the engine links that command into the user's bin directory. The header describes the folder; there is no per-application script. Data still maps through one `DAT_SOURCE`/`DAT_TARGET`, so per-version state stays in one tree while each entry opens a different build.
+A folder can hold several launchers. If `bin/` contains only variant subdirectories, the engine detects each one and looks for `<PKG>-launcher` or `<PKG>`, `<PKG>_<name>.desktop`, and `<PKG>.svg` at the root (or in the variant directory). `DEFAULT_ENTRY` selects the default; otherwise the first entry. `ENTRIES` is the explicit override for layouts that do not follow the convention: it maps a name to a binary directory, an executable, a desktop file, and an icon. Either way, auto-detected entries share one icon, each desktop `Exec=` becomes `<pkg>-<name>`, and the engine links that command into `CMD_TARGET`, the user's command directory. `BIN_TARGET` stays the host application binary directory and is not involved in these command links. The header describes the folder; there is no per-application script. Data still maps through one `DAT_SOURCE`/`DAT_TARGET`, so per-version state stays in one tree while each entry opens a different build.
 
 ## Icons
 
