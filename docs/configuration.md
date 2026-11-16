@@ -336,7 +336,8 @@ Derived values:
 - `DAT_SOURCE` defaults to `$PORTABLE_ROOT/dat`; no `dat/` means no data mapping.
 - `BIN_SOURCE` defaults to `$PORTABLE_ROOT/bin`; no `bin/` means no launcher.
 - If `bin/` exists, `bin/<command>` becomes a launcher that runs `flatpak run --user|--system "$FLATPAK_ID" "$@"`. The command name comes from the app's `Command=` metadata.
-- The Flatpak deployment is never linked or modified. `flatpak run` resolves the architecture, branch, and active deployment.
+- If `bin/` exists, `BIN_TARGET` becomes the active deployment's `files/bin` (or `files`), and `bin/$FLATPAK_ID` becomes a read-only reference symlink to it. The link uses `active`, so it follows Flatpak updates.
+- The Flatpak installation is not modified. `flatpak run` resolves the architecture, branch, and active deployment.
 - Desktop entry and icon come from the Flatpak export when present.
 - `PKG` is not used; a missing app is installed with `flatpak install --user|--system -y flathub "$FLATPAK_ID"`.
 
@@ -354,9 +355,9 @@ MyApp/
 └── bin/   # optional
 ```
 
-Create only `dat/` to preserve data, only `bin/` to keep a portable launcher, or both. The runner does not create the side you omit. A previously tracked side that disappears triggers rename recovery; if you intend to stop preserving it, remove the matching `source-<key>-dat` or `source-<key>-bin` state file.
+Create only `dat/` to preserve data, only `bin/` to keep a portable launcher and binary reference, or both. The runner does not create the side you omit. A previously tracked side that disappears triggers rename recovery; if you intend to stop preserving it, remove the matching `source-<key>-dat` or `source-<key>-bin` state file.
 
-The data path is the same for user and system installs. User scope never needs root; system scope may need administrator authentication. Flatpak does not support symlinking an individual app installation directory (`~/.local/share/flatpak/app/$FLATPAK_ID` or `/var/lib/flatpak/app/$FLATPAK_ID`); the runner never does that. Symlinking the arch directory (`.../app/$FLATPAK_ID/$ARCH`) is not a workaround: Flatpak stops listing the app, and update/uninstall cannot find it. Symlinking the deployment's `files` directory itself is also not enough: listing and updates still work, but `flatpak run` fails in bwrap. Symlinking an entry **inside** `files` works when the target is exposed to the sandbox with a read-only filesystem override; `FLATPAK_OFFLOAD` does that. It keeps `files` a real directory, so listing and updates still work, and the override lets `flatpak run` resolve the symlink.
+The data path is the same for user and system installs. User scope never needs root; system scope may need administrator authentication. The default `bin/` side is a read-only reference inside the portable root: `bin/$FLATPAK_ID` points at the active deployment's `files/bin` (or `files`), and the Flatpak installation is untouched. Flatpak does not support symlinking an individual app installation directory (`~/.local/share/flatpak/app/$FLATPAK_ID` or `/var/lib/flatpak/app/$FLATPAK_ID`); the runner never does that. Symlinking the arch directory (`.../app/$FLATPAK_ID/$ARCH`) is not a workaround: Flatpak stops listing the app, and update/uninstall cannot find it. Symlinking the deployment's `files` directory itself is also not enough: listing and updates still work, but `flatpak run` fails in bwrap. Symlinking an entry **inside** `files` works when the target is exposed to the sandbox with a read-only filesystem override; `FLATPAK_OFFLOAD` does that. It keeps `files` a real directory, so listing and updates still work, and the override lets `flatpak run` resolve the symlink.
 
 ```sh
 FLATPAK_OFFLOAD="app-bundle"

@@ -1083,6 +1083,33 @@ if [ -n "$FLATPAK_ID" ] && [ -n "${FLATPAK_OFFLOAD:-}" ]; then
     fi
 fi
 
+# Flatpak bin reference: link the active deployment's binary directory inside
+# the portable root. The link points at the stable active path, so it follows
+# updates without modifying the Flatpak installation.
+if [ -n "$FLATPAK_ID" ] && [ -d "$PORTABLE_ROOT/bin" ] && [ ! -L "$PORTABLE_ROOT/bin" ]; then
+    _flatpak_deploy=$(flatpak info $_flatpak_scope -l "$FLATPAK_ID" 2>/dev/null) || _flatpak_deploy=""
+    if [ -n "$_flatpak_deploy" ]; then
+        _flatpak_branch=$(dirname -- "$_flatpak_deploy")
+        _flatpak_active="$_flatpak_branch/active"
+        [ -e "$_flatpak_active" ] || _flatpak_active="$_flatpak_deploy"
+        _flatpak_files="$_flatpak_active/files"
+        _flatpak_ref="$_flatpak_files/bin"
+        [ -d "$_flatpak_ref" ] || _flatpak_ref="$_flatpak_files"
+        if [ -d "$_flatpak_ref" ]; then
+            BIN_TARGET=$_flatpak_ref
+            _flatpak_link="$PORTABLE_ROOT/bin/$FLATPAK_ID"
+            if [ -L "$_flatpak_link" ]; then
+                rm -f -- "$_flatpak_link" || need_root "replace $_flatpak_link"
+            elif [ -e "$_flatpak_link" ]; then
+                printf 'Refusing to replace %s\n' "$_flatpak_link" >&2
+                exit 1
+            fi
+            ln -s "$_flatpak_ref" "$_flatpak_link" || need_root "link $_flatpak_link"
+            own "$_flatpak_link"
+        fi
+    fi
+fi
+
 # Desktop entries and icons
 if [ -n "$ENTRIES" ]; then
     install_entry() {
