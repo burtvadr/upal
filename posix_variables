@@ -1087,35 +1087,6 @@ link_or_backup() {
     return 0
 }
 
-# Remove broken symlinks directly inside a managed link directory. Real files,
-# real directories, and valid symlinks are untouched. This also clears stale
-# links from other apps in a shared command directory.
-cleanup_broken_links() {
-    _dir=$1
-    [ -n "$_dir" ] && [ -d "$_dir" ] && [ ! -L "$_dir" ] || return 0
-    for _link in "$_dir"/* "$_dir"/.[!.]* "$_dir"/..?*; do
-        [ -L "$_link" ] || continue
-        [ -e "$_link" ] && continue
-        rm -f -- "$_link" || need_root "remove broken link $_link"
-    done
-}
-
-# The convenience sweep is for host link directories, never the portable root.
-cleanup_host_links() {
-    _dir=$1
-    case "$_dir" in
-        /*) ;;
-        *) return 0 ;;
-    esac
-    case "$_dir/" in
-        "$PORTABLE_ROOT/"|"$PORTABLE_ROOT"/*) return 0 ;;
-    esac
-    case "$_dir" in
-        /|"$HOME") return 0 ;;
-    esac
-    cleanup_broken_links "$_dir"
-}
-
 # Flatpak experimental offload: move named top-level entries out of the active
 # deployment's files/ into the portable bin/ and expose that target read-only.
 # files/ stays a real directory, so Flatpak still lists and updates the app.
@@ -1364,13 +1335,25 @@ else
     fi
 fi
 
-# Remove broken links in the desktop application directory. This includes
-# stale links from other apps; valid links and real desktop files are kept.
-[ -n "$DESKTOP_FILE_TARGET" ] && cleanup_host_links "$DESKTOP_FILE_TARGET"
-
-# Remove broken links in the command directory, including stale links from
-# other apps. Valid links and real files are untouched.
-[ -n "$CMD_TARGET" ] && cleanup_host_links "$CMD_TARGET"
+# Clean up broken command links if sources were removed
+if [ -n "$BIN_SOURCE" ] && [ -n "$CMD_TARGET" ] && [ -d "$CMD_TARGET" ]; then
+    for link in "$CMD_TARGET"/*; do
+        [ -L "$link" ] || continue
+        [ -e "$link" ] && continue
+        _link_target=$(readlink "$link")
+        case "$_link_target" in
+            "$BIN_SOURCE"/*) rm -f -- "$link" ;;
+            *)
+                if [ -n "$BIN_TARGET" ]; then
+                    case "$_link_target" in "$BIN_TARGET"/*) rm -f -- "$link"; continue ;; esac
+                fi
+                if [ -n "$_old_bin" ]; then
+                    case "$_link_target" in "$_old_bin"/*) rm -f -- "$link" ;; esac
+                fi
+                ;;
+        esac
+    done
+fi
 
 # Clean up broken per-entry app binary links in BIN_TARGET/<entry>/
 if [ -n "$BIN_SOURCE" ] && [ -n "$BIN_TARGET" ] && [ -d "$BIN_TARGET" ]; then
@@ -1404,7 +1387,6 @@ if [ -n "$DAT_TARGET" ]; then
     prepare_data_target "$DAT_SOURCE" "$DAT_TARGET"
     link_or_backup "$DAT_SOURCE" "$DAT_TARGET" bak
     source_state_save dat "$DAT_SOURCE"
-    [ -L "$DAT_TARGET" ] && cleanup_host_links "$(dirname -- "$DAT_TARGET")"
 fi
 
 # Link binaries from BIN_SOURCE to BIN_TARGET
@@ -1450,10 +1432,6 @@ elif [ -z "$ENTRIES" ] && [ "$ICON_METHOD" != "none" ] && [ -n "$ICON_ID" ] && [
         own "$HOME/.local/share/icons/hicolor/icon-theme.cache"
     fi
 fi
-
-# Remove broken links in the icon target directory. Valid icons and real
-# files are kept.
-[ -n "$ICON_TARGET" ] && [ "$ICON_METHOD" != "none" ] && cleanup_host_links "$ICON_TARGET"
 
 # gio metadata is per-user; skip it when running as root
 if [ "$(id -u)" -ne 0 ] && command -v gio >/dev/null 2>&1; then
