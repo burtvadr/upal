@@ -7,6 +7,7 @@ PORTABLE_ROOT=$(cd -P -- "$(dirname -- "$0")" && command pwd -P)
 
 # Variables
 PACKAGE_MANAGER="auto"
+FLATPAK_ID=""
 PKG=""
 NAME="$PKG"
 DAT_SOURCE="$PORTABLE_ROOT/dat"
@@ -387,6 +388,27 @@ if [ -n "$DESKTOP_FILE_SOURCE" ] && [ "$DESKTOP_FILE_SOURCE" != "$PORTABLE_ROOT"
     DESKTOP_FILE_SOURCE=$RESOLVED
 fi
 
+# Flatpak profile: the app ID fills the standard paths. A dat/bin directory
+# selects the portable side; a missing side stays host-managed.
+if [ -n "$FLATPAK_ID" ]; then
+    case "$FLATPAK_ID" in
+        *[!A-Za-z0-9._-]*)
+            printf 'Invalid FLATPAK_ID: %s\n' "$FLATPAK_ID" >&2
+            exit 1
+            ;;
+    esac
+    case "$PACKAGE_MANAGER" in
+        ""|auto) PACKAGE_MANAGER=flatpak ;;
+    esac
+    if [ -z "$DAT_TARGET" ] && [ -d "$DAT_SOURCE" ]; then
+        DAT_TARGET="$HOME/.var/app/$FLATPAK_ID"
+    fi
+fi
+if [ "$PACKAGE_MANAGER" = "flatpak" ] && [ -z "$FLATPAK_ID" ]; then
+    printf 'FLATPAK_ID is required for the Flatpak profile\n' >&2
+    exit 1
+fi
+
 # Icon archives: <target>1, <target>2, ...
 # The oldest archive is the icon to restore when the custom icon is removed.
 icon_oldest() {
@@ -659,7 +681,19 @@ done
 
 # Install the package if not already installed
 # PACKAGE_MANAGER: "auto"/"native" tries pkgcli > pkcon > distro; "distro" uses only the distro package manager
-if [ -n "$PKG" ]; then
+if [ "$PACKAGE_MANAGER" = "flatpak" ] && [ -n "$FLATPAK_ID" ]; then
+    command -v flatpak >/dev/null 2>&1 || {
+        printf 'flatpak is not installed\n' >&2
+        exit 1
+    }
+    if ! flatpak info "$FLATPAK_ID" >/dev/null 2>&1; then
+        flatpak install --user -y "$FLATPAK_ID" || flatpak install -y "$FLATPAK_ID" || {
+            printf 'Flatpak app is not installed: %s\n' "$FLATPAK_ID" >&2
+            printf 'Install it with: flatpak install %s\n' "$FLATPAK_ID" >&2
+            exit 1
+        }
+    fi
+elif [ -n "$PKG" ]; then
     if command -v "$PKG" >/dev/null 2>&1; then
         : # already installed
     elif { [ "$PACKAGE_MANAGER" = "auto" ] || [ "$PACKAGE_MANAGER" = "native" ]; } && command -v pkgcli >/dev/null 2>&1; then
@@ -771,6 +805,41 @@ if [ -n "$ENTRIES" ]; then
         printf '%s\n' "no writable command directory found" >&2
         exit 1
     }
+fi
+
+# Flatpak bin side: a portable launcher, not a copy of the immutable app.
+flatpak_launcher() {
+    cat > "$1" <<EOF || need_root "write $1"
+#!/bin/sh
+# Managed by UPAL: Flatpak launcher
+exec flatpak run "$FLATPAK_ID" "\$@"
+EOF
+    chmod +x "$1" 2>/dev/null || need_root "make $1 executable"
+    own "$1"
+}
+
+if [ -n "$FLATPAK_ID" ] && [ -e "$BIN_SOURCE" ]; then
+    _fp_cmd=$(flatpak info -m "$FLATPAK_ID" 2>/dev/null | sed -n 's/^Command=//p' | head -n 1)
+    _fp_cmd=${_fp_cmd%% *}
+    _fp_cmd=${_fp_cmd##*/}
+    [ -n "$_fp_cmd" ] || _fp_cmd=${PKG:-${FLATPAK_ID##*.}}
+
+    _fp_wrapper=""
+    if [ -d "$BIN_SOURCE" ] && [ ! -L "$BIN_SOURCE" ]; then
+        _fp_wrapper="$BIN_SOURCE/$_fp_cmd"
+    elif [ -f "$BIN_SOURCE" ] || [ -L "$BIN_SOURCE" ]; then
+        _fp_wrapper=$BIN_SOURCE
+    fi
+
+    if [ -n "$_fp_wrapper" ] && [ -d "$_fp_wrapper" ]; then
+        printf 'Flatpak launcher path is a directory: %s\n' "$_fp_wrapper" >&2
+    elif [ -n "$_fp_wrapper" ] && [ -L "$_fp_wrapper" ]; then
+        : # user-provided link
+    elif [ -n "$_fp_wrapper" ] && [ -e "$_fp_wrapper" ]; then
+        grep -q '^# Managed by UPAL: Flatpak launcher$' "$_fp_wrapper" 2>/dev/null && flatpak_launcher "$_fp_wrapper"
+    elif [ -n "$_fp_wrapper" ]; then
+        flatpak_launcher "$_fp_wrapper"
+    fi
 fi
 
 # backup_target <path> [bak|number]
@@ -1107,7 +1176,7 @@ fi
 # Link binaries from BIN_SOURCE to BIN_TARGET
 # BIN_SOURCE can be a directory or a single file
 # BIN_TARGET can be a directory or a single file path
-if [ -z "$ENTRIES" ] && [ -n "$BIN_TARGET" ] && [ -d "$BIN_SOURCE" ]; then
+if [ -z "$ENTRIES" ] && [ -z "$FLATPAK_ID" ] && [ -n "$BIN_TARGET" ] && [ -d "$BIN_SOURCE" ]; then
     # BIN_SOURCE is a directory - link all executables
     mkdir -p "$BIN_TARGET" || need_root "create $BIN_TARGET"
     own_path "$BIN_TARGET"
@@ -1118,7 +1187,7 @@ if [ -z "$ENTRIES" ] && [ -n "$BIN_TARGET" ] && [ -d "$BIN_SOURCE" ]; then
         target="$BIN_TARGET/$name"
         link_or_backup "$f" "$target"
     done
-elif [ -z "$ENTRIES" ] && [ -n "$BIN_TARGET" ] && { [ -f "$BIN_SOURCE" ] || [ -L "$BIN_SOURCE" ]; }; then
+elif [ -z "$ENTRIES" ] && [ -z "$FLATPAK_ID" ] && [ -n "$BIN_TARGET" ] && { [ -f "$BIN_SOURCE" ] || [ -L "$BIN_SOURCE" ]; }; then
     # BIN_SOURCE is a single file
     if [ -d "$BIN_TARGET" ]; then
         # BIN_TARGET is a directory - link into it
@@ -1261,6 +1330,12 @@ EOF
         printf 'No executable for entry: %s\n' "${_want:-$_first_name}" >&2
         exit 1
     fi
+elif [ -n "$FLATPAK_ID" ]; then
+    command -v flatpak >/dev/null 2>&1 || {
+        printf 'flatpak is not installed\n' >&2
+        exit 1
+    }
+    exec flatpak run "$FLATPAK_ID" "$@"
 elif [ -n "$PKG" ] && command -v "$PKG" >/dev/null 2>&1; then
     nohup "$PKG" >/dev/null 2>&1 &
 fi

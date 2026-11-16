@@ -117,9 +117,9 @@ It is an authoring tool, not part of the runner. ptrace permissions, Flatpak san
 
 ## Flatpak profile
 
-Flatpak is the ideal case: the paths are standardized, so the runner only needs `FLATPAK_ID`. `PACKAGE_MANAGER="flatpak"` derives the data path (`~/.var/app/$FLATPAK_ID`), installs with `flatpak install`, and runs with `flatpak run`.
+Flatpak is the ideal case: the paths are standardized, so the runner only needs `FLATPAK_ID`. Setting it selects the Flatpak profile when `PACKAGE_MANAGER` is `auto`. The presence of `dat/` maps `~/.var/app/$FLATPAK_ID`; the presence of `bin/` creates a portable launcher wrapper in `bin/<command>`. The runner installs with `flatpak install` and runs with `flatpak run`.
 
-The binary location is irrelevant to the runner because it never links the Flatpak binary. User installs live in `~/.local/share/flatpak/app/$FLATPAK_ID`; system installs live in `/var/lib/flatpak/app/$FLATPAK_ID`. The data path is the same for both.
+The Flatpak deployment is never linked or modified. User installs live in `~/.local/share/flatpak/app/$FLATPAK_ID`; system installs live in `/var/lib/flatpak/app/$FLATPAK_ID`. `flatpak run` resolves the scope, architecture, branch, and active deployment; the runner does not hardcode those paths. The data path is the same for both scopes. A `bin/` launcher is a wrapper, not a copy of the immutable app files.
 
 Applications that write outside the sandbox data directory, such as Heroic with `~/Games`, need an explicit extra mapping in a hook. The standard path is automatic; the exception is opt-in.
 

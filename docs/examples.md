@@ -130,16 +130,11 @@ Heroic/
 ```
 
 ```sh
-PACKAGE_MANAGER="flatpak"
 FLATPAK_ID="com.heroicgameslauncher.hgl"
-DAT_SOURCE="$PORTABLE_ROOT/dat"
-DAT_TARGET="$HOME/.var/app/$FLATPAK_ID"
-DAT_METHOD="link"
-BIN_MODE="auto"
 NAME="Heroic"
 ```
 
-`DAT_SOURCE` and `DAT_TARGET` can be omitted; the profile derives them from `FLATPAK_ID`. The runner installs with `flatpak install`, runs with `flatpak run`, and does not link the Flatpak binary. The data path is `~/.var/app/$FLATPAK_ID` for both user and system installs.
+The `dat/` directory is enough. The profile derives `DAT_TARGET` from `FLATPAK_ID` and links it to `dat/`. Omit `dat/` to leave host data alone. Add `bin/` only if you want a portable launcher; the runner creates `bin/<command>`, which runs `flatpak run`, and never links or modifies the Flatpak deployment. The runner installs with `flatpak install` and runs with `flatpak run`. The data path is `~/.var/app/$FLATPAK_ID` for both user and system installs.
 
 Heroic also writes games to `~/Games`. Add it explicitly:
 

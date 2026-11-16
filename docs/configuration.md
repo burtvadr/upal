@@ -59,7 +59,7 @@ KILL_TERMINAL="yes"
 |---|---|---|
 | `PKG` | `""` | Package or packages to install, space-separated. Empty means search for `BIN_NAMES`, or use the runner filename. |
 | `PACKAGE_MANAGER` | `auto` | `auto`/`native` (PackageKit chain), `distro`, `flatpak`, `snap`, `nix`, `brew`, `toolpak`, `pkgit`, `cpak`, or `none`. |
-| `FLATPAK_ID` | `""` | Flatpak application ID. Required by the Flatpak profile; the data path is derived. |
+| `FLATPAK_ID` | `""` | Flatpak application ID. Setting it selects the Flatpak profile when `PACKAGE_MANAGER` is `auto`; `dat/` and `bin/` select the portable sides. |
 | `BIN_NAMES` | `""` | Commands to check, link, and run. Empty means the words in `PKG`, or the runner filename. |
 | `DAT_SOURCE` | `""` | Portable data directory. Empty means detect; if `DAT_TARGET` is set, defaults to `$PORTABLE_ROOT/dat`. |
 | `DAT_TARGET` | `""` | Host data path. Empty means XDG mapping when the data directory is XDG-shaped, otherwise no redirection. |
@@ -316,26 +316,37 @@ Packages are installed one per word, so `PKG="adb fastboot heimdall scrcpy"` loo
 
 ## Flatpak profile
 
-`PACKAGE_MANAGER="flatpak"` is a profile: only `FLATPAK_ID` is required. The engine fills the standardized paths.
+Only `FLATPAK_ID` is required. The engine fills the standardized paths, and the presence of `dat/` or `bin/` selects the portable sides. Set `PACKAGE_MANAGER` only if you want to override the backend.
 
 | Path | User install | System install |
 |---|---|---|
-| binaries | `~/.local/share/flatpak/app/$FLATPAK_ID` | `/var/lib/flatpak/app/$FLATPAK_ID` |
+| deployment | `~/.local/share/flatpak/app/$FLATPAK_ID` | `/var/lib/flatpak/app/$FLATPAK_ID` |
 | data | `~/.var/app/$FLATPAK_ID` | `~/.var/app/$FLATPAK_ID` |
 | desktop export | `~/.local/share/flatpak/exports/share/applications/$FLATPAK_ID.desktop` | `/var/lib/flatpak/exports/share/applications/$FLATPAK_ID.desktop` |
 
 Derived values:
 
-- `DAT_SOURCE="$PORTABLE_ROOT/dat"` if empty.
-- `DAT_TARGET="$HOME/.var/app/$FLATPAK_ID"` if empty.
-- `BIN_MODE` is host: no binary links; run with `flatpak run "$FLATPAK_ID"`.
-- `PKG` is not used; install with `flatpak install`.
+- `PACKAGE_MANAGER="flatpak"` when it was `auto`.
+- `DAT_TARGET="$HOME/.var/app/$FLATPAK_ID"` when `DAT_SOURCE` exists and `DAT_TARGET` is empty.
+- `DAT_SOURCE` defaults to `$PORTABLE_ROOT/dat`; no `dat/` means no data mapping.
+- `BIN_SOURCE` defaults to `$PORTABLE_ROOT/bin`; no `bin/` means no launcher.
+- If `bin/` exists, `bin/<command>` becomes a launcher that runs `flatpak run "$FLATPAK_ID" "$@"`. The command name comes from the app's `Command=` metadata.
+- The Flatpak deployment is never linked or modified. `flatpak run` resolves the installation scope, architecture, branch, and active deployment.
 - Desktop entry and icon come from the Flatpak export when present.
+- `PKG` is not used; a missing app is installed with `flatpak install`.
 
 ```sh
-PACKAGE_MANAGER="flatpak"
 FLATPAK_ID="com.developer.App"
 ```
+
+```text
+MyApp/
+├── runner
+├── dat/   # optional
+└── bin/   # optional
+```
+
+Create only `dat/` to preserve data, only `bin/` to keep a portable launcher, or both. The runner does not create the side you omit. A previously tracked side that disappears triggers rename recovery; if you intend to stop preserving it, remove the matching `source-<key>-dat` or `source-<key>-bin` state file.
 
 The data path is the same for user and system installs. User installs never need root. Some applications write outside `~/.var/app/$FLATPAK_ID`; add those paths explicitly with the `redirect` helper in a hook. Heroic's `~/Games` is the common example.
 

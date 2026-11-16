@@ -114,27 +114,38 @@ A GTK tool will wrap `strace`/`ptrace` to observe which paths an application tou
 
 ## Flatpak profile
 
-Flatpak is the cleanest case because the paths are standardized. `PACKAGE_MANAGER="flatpak"` is a profile: it fills the paths from `FLATPAK_ID`, so there are no directories to configure.
+Flatpak is the cleanest case because the app ID fills the standard paths. Create `dat/` to make data portable, `bin/` to keep a portable launcher, or both. No `DAT_TARGET` or `BIN_TARGET` is needed.
 
-| What | User install | System install |
-|---|---|---|
-| binaries | `~/.local/share/flatpak/app/$FLATPAK_ID` | `/var/lib/flatpak/app/$FLATPAK_ID` |
-| data | `~/.var/app/$FLATPAK_ID` | `~/.var/app/$FLATPAK_ID` |
+```text
+MyApp/
+├── runner
+├── dat/            # optional: portable ~/.var/app/$FLATPAK_ID
+└── bin/            # optional: portable launcher for the Flatpak app
+```
 
 ```sh
-PACKAGE_MANAGER="flatpak"
 FLATPAK_ID="com.developer.App"
 ```
 
-The runner derives:
+The runner:
 
-- `DAT_SOURCE="$PORTABLE_ROOT/dat"`;
-- `DAT_TARGET="$HOME/.var/app/$FLATPAK_ID"`;
-- install via `flatpak install`;
-- run via `flatpak run "$FLATPAK_ID"`, with no binary links;
-- desktop entry and icon from the Flatpak export, when present.
+- installs with `flatpak install` when the app is missing;
+- runs with `flatpak run "$FLATPAK_ID"`;
+- if `dat/` exists, links `~/.var/app/$FLATPAK_ID` to it;
+- if `bin/` exists, creates `bin/<command>` as a launcher for `flatpak run`, using the app's `Command=` metadata;
+- never copies, links, or modifies the Flatpak deployment;
+- leaves host data alone when `dat/` is absent;
+- creates no launcher when `bin/` is absent;
+- uses Flatpak's exported desktop entry and icon; a portable `.desktop` or icon is optional.
 
-User and system installs differ only in where the binaries live; the data path is always `~/.var/app/$FLATPAK_ID`. User installs never need root. Some applications write outside the sandbox data directory: Heroic creates `~/Games`. Add it explicitly if you want it portable; it is not automatic.
+`PACKAGE_MANAGER` may be omitted; setting `FLATPAK_ID` selects the Flatpak profile when the manager is `auto`.
+
+```text
+~/.var/app/com.developer.App -> ~/Apps/MyApp/dat
+~/Apps/MyApp/bin/<command>  # exec flatpak run "com.developer.App" "$@"
+```
+
+The data path is the same for user and system installs. Flatpak owns the immutable app files, so `bin/` is a portable launcher, not a copy of the deployment. Some applications write outside `~/.var/app/$FLATPAK_ID`: Heroic creates `~/Games`. Add those explicitly if you want them portable; they are not automatic.
 
 ## Methods
 
@@ -243,7 +254,7 @@ The target engine enforces these rules. The reference template implements an ear
 | Auto-detection of `bin` and `dat` | specified |
 | Package manager chain (`pkgcli` > `pkcon` > native) | partially implemented; search and `yay` fallback specified |
 | No internal sudo; root check and message | implemented |
-| Flatpak profile (auto paths) | specified |
+| Flatpak profile (auto paths) | implemented |
 | Snap, Nix, Homebrew, Toolpak, pkgit, cpak adapters | specified |
 | Icon auto-detect, theme install, and reset | implemented |
 | Desktop entry link and `Exec=` rewrite | implemented |
