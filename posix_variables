@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: 0BSD
 # POSIX generic portable application script
 
 # Directory where this script lives

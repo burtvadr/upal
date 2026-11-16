@@ -278,4 +278,4 @@ The reference implementation is `posix_variables`. The full target contract is i
 
 ## License
 
-No license has been chosen yet. Treat the repository as all rights reserved until one is added.
+0BSD. See [LICENSE](LICENSE).
