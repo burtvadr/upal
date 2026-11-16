@@ -94,6 +94,18 @@ Portable data is independent of the binary. The same folder can point at a distr
 
 UPAL does not convert data between application versions or distributions. A profile written by a newer Arch package may not load in an older Debian package; that is the user's decision. The safety net is `BACKUP="yes"`: before a host path is replaced, the existing data is kept as `<path>.bak`. Disable it only when you have your own backup.
 
+## Renamed sources
+
+Once a managed source exists, the runner remembers it under `${XDG_STATE_HOME:-$HOME/.local/state}/upal/` by device, inode, and top-level names and types. If `DAT_SOURCE`, `BIN_SOURCE`, or a custom `DESKTOP_FILE_SOURCE` disappears, the next run searches for it before linking or launching:
+
+- an exact inode match is used directly;
+- otherwise at least two top-level entries, a 65% match, and a 15-point lead over the next candidate are required;
+- the old parent is checked first, then the portable root three levels deep.
+
+A match updates the source path and repairs the links. No match, or a tie, stops the run and prints the closest candidates. A broken target symlink is removed first with `rm -f`; it is never followed. The runner does not create an empty source when a source was known before, and it never replaces a valid target symlink with one. On a first run it may create `DAT_SOURCE` to adopt existing host data.
+
+Remove `source-<key>-<role>` from the state directory to start fresh. The state stays outside the portable folder, so the folder remains one manager file plus data.
+
 ## Methods
 
 The engine has one primitive:

@@ -2,7 +2,7 @@
 
 ## One file
 
-UPAL has one hard rule: a portable application is managed by exactly one file. That file contains the configuration, the engine, and the entry point. There is no sidecar config for the manager, no second binary, no hidden state.
+UPAL has one hard rule: a portable application is managed by exactly one file. That file contains the configuration, the engine, and the entry point. There is no sidecar config for the manager, no second binary, and no hidden state inside the portable folder. A disposable per-user cache outside the folder remembers installed icons and source identities; the folder still works without it.
 
 Two implementations are allowed:
 
@@ -38,7 +38,7 @@ Binaries use the same idea with a different unit: a command name, a source direc
 1. Resolve `PORTABLE_ROOT` from the runner's real path.
 2. Preflight: filesystem type, writability, dry-run.
 3. Resolve `PKG` and `BIN_NAMES`.
-4. Detect binaries and data.
+4. Detect binaries and data, repairing a managed source renamed inside the folder.
 5. Install missing packages, one per `PKG` word, or call `app_install`.
 6. Link binaries according to `BIN_MODE`.
 7. Link data according to `DAT_METHOD`: adopt host data when the portable side is empty, remove an empty target directory, and back up a real conflict as `<path>1`, `<path>2`.
@@ -54,6 +54,16 @@ The runner is idempotent. Running it twice changes nothing. A link that already 
 UPAL is a portable data layer, not a portable binary format. The irreplaceable part is user data; binaries are disposable. The default is host-provided binaries, with the distro managing updates and security. Folder-owned binaries are an opt-in mode for offline use, a locally compiled build, or a self-contained folder.
 
 This is why the data mapping is the center of the contract and the binary mode is secondary. A user can change `BIN_MODE` without touching the data; changing the data mapping is the decision that matters.
+
+## Renamed sources
+
+The folder is movable, and so is anything inside it. The runner records each managed source directory (`DAT_SOURCE`, `BIN_SOURCE`, a custom `DESKTOP_FILE_SOURCE`) by device, inode, and top-level names and types in `${XDG_STATE_HOME:-$HOME/.local/state}/upal/source-<key>-<role>`. Moving the whole folder changes the key, but the source still exists, so the state is rebuilt. The state never lives inside the portable folder.
+
+At launch, a missing source triggers recovery. The runner scans the old parent first, then the folder three levels deep. An exact device/inode match is conclusive: a rename or move on the same filesystem keeps the inode. Otherwise it scores candidates by top-level name and type overlap, requires at least two matching entries and 65%, and requires a 15-point margin over the second candidate. The winning path replaces the configured one, the state is updated, and the target link is recreated.
+
+Recovery never guesses. If the score is too low or two candidates tie, the runner stops and prints the closest candidates. A broken target link is removed first with `rm -f` on the link itself; the destination is never followed or deleted. No empty source directory is created when the source was known before, and a valid target link is never replaced by one. That differs from the first run, where `DAT_SOURCE` may be created to import existing host data.
+
+The state file is the opt-out: remove it to start with an empty source. The limit is deliberate: an inode match handles a rename or move on the same filesystem, and the name fingerprint handles a copy; a move deeper than three levels without an inode match needs an explicit `DAT_SOURCE`.
 
 ## Data reuse and version compatibility
 

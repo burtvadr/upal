@@ -102,9 +102,11 @@ sed_in_place() {
 
 # Remember the last installed icon so an auto-detected icon can be restored
 # after its source file is deleted.
+_state_base="${XDG_STATE_HOME:-$HOME/.local/state}/upal"
 _icon_key=${PKG:-${NAME:-$(printf '%s' "$PORTABLE_ROOT" | cksum | cut -d' ' -f1)}}
 _icon_key=$(printf '%s' "$_icon_key" | tr -c 'A-Za-z0-9._-' '_')
-_icon_state="${XDG_STATE_HOME:-$HOME/.local/state}/upal/icon-$_icon_key"
+_icon_state="$_state_base/icon-$_icon_key"
+_source_key=$(printf '%s' "$PORTABLE_ROOT" | cksum | cut -d' ' -f1)
 
 icon_state_field() {
     [ -f "$_icon_state" ] || return 1
@@ -143,6 +145,245 @@ icon_state_load() {
     _icon_default_ext=$_def
     _icon_default_dir=$_defdir
 }
+
+# Managed source directories are remembered by device, inode, and top-level
+# names, so a directory renamed inside the portable root can be found again.
+# State lives outside the root and is keyed by the root path.
+source_state_file() {
+    printf '%s/source-%s-%s' "$_state_base" "$_source_key" "$1"
+}
+
+source_state_save() {
+    _role=$1
+    _path=$2
+    [ -d "$_path" ] && [ ! -L "$_path" ] || return 0
+    _dev=$(stat -c %d -- "$_path" 2>/dev/null) || return 0
+    _ino=$(stat -c %i -- "$_path" 2>/dev/null) || return 0
+    _file=$(source_state_file "$_role")
+    mkdir -p "$_state_base" || need_root "create $_state_base"
+    own_path "$_state_base"
+    {
+        printf '%s %s\n' "$_dev" "$_ino"
+        for _entry in "$_path"/* "$_path"/.[!.]* "$_path"/..?*; do
+            [ -e "$_entry" ] || [ -L "$_entry" ] || continue
+            if [ -L "$_entry" ]; then
+                _kind=l
+            elif [ -d "$_entry" ]; then
+                _kind=d
+            elif [ -f "$_entry" ]; then
+                _kind=f
+            else
+                _kind=o
+            fi
+            printf '%s %s\n' "$_kind" "${_entry##*/}"
+        done | LC_ALL=C sort
+    } > "$_file" || need_root "write $_file"
+    own "$_file"
+}
+
+# An empty state file marks a source that was known but is now missing, so a
+# later run does not mistake it for a first run and create an empty directory.
+source_state_mark_missing() {
+    _role=$1
+    _file=$(source_state_file "$_role")
+    [ -f "$_file" ] && return 0
+    mkdir -p "$_state_base" || need_root "create $_state_base"
+    own_path "$_state_base"
+    : > "$_file" || need_root "write $_file"
+    own "$_file"
+}
+
+# source_score <state_file> <candidate>
+# Sets _score, _match, and _total from the top-level names in the state.
+source_score() {
+    _file=$1
+    _cand=$2
+    _total=0
+    _match=0
+    _header=1
+    while IFS= read -r _entry || [ -n "$_entry" ]; do
+        if [ "$_header" = "1" ]; then
+            _header=0
+            continue
+        fi
+        [ -n "$_entry" ] || continue
+        _kind=${_entry%% *}
+        _name=${_entry#* }
+        [ -n "$_name" ] || _name=$_entry
+        _total=$((_total + 1))
+        case "$_kind" in
+            d) [ -d "$_cand/$_name" ] && _match=$((_match + 1)) ;;
+            f) [ -f "$_cand/$_name" ] && _match=$((_match + 1)) ;;
+            l) [ -L "$_cand/$_name" ] && _match=$((_match + 1)) ;;
+            *) { [ -e "$_cand/$_name" ] || [ -L "$_cand/$_name" ]; } && _match=$((_match + 1)) ;;
+        esac
+    done < "$_file"
+    _score=0
+    [ "$_total" -gt 0 ] && _score=$((100 * _match / _total))
+    return 0
+}
+
+# source_consider <state_file> <candidate>
+# An exact device/inode match wins. Otherwise at least two top-level names must
+# match, and the best candidate must beat the second best by a clear margin.
+source_consider() {
+    _file=$1
+    _cand=$2
+    [ -d "$_cand" ] && [ ! -L "$_cand" ] || return 0
+    case "$_cand/" in
+        "$PORTABLE_ROOT"/*) ;;
+        *) return 0 ;;
+    esac
+    _cdev=$(stat -c %d -- "$_cand" 2>/dev/null) || return 0
+    _cino=$(stat -c %i -- "$_cand" 2>/dev/null) || return 0
+    if [ -n "$_sino" ] && [ "$_cdev" = "$_sdev" ] && [ "$_cino" = "$_sino" ]; then
+        _inode_hits=$((_inode_hits + 1))
+        _inode_path=$_cand
+        return 0
+    fi
+    source_score "$_file" "$_cand"
+    [ "$_total" -ge 2 ] || return 0
+    [ "$_match" -ge 2 ] || return 0
+    if [ "$_score" -gt "$_best_score" ]; then
+        _second_score=$_best_score
+        _second_path=$_best_path
+        _best_score=$_score
+        _best_path=$_cand
+    elif [ "$_cand" != "$_best_path" ] && [ "$_score" -gt "$_second_score" ]; then
+        _second_score=$_score
+        _second_path=$_cand
+    fi
+    return 0
+}
+
+source_missing() {
+    _role=$1
+    _path=$2
+    _detail=$3
+    case "$_role" in
+        dat)     _label="data directory" ;;
+        bin)     _label="binary directory" ;;
+        desktop) _label="desktop file directory" ;;
+        *)       _label="source directory" ;;
+    esac
+    printf 'Missing %s: %s\n' "$_label" "$_path" >&2
+    [ -n "$_detail" ] && printf '%s\n' "$_detail" >&2
+    printf 'Rename it back or set the matching path in the header.\n' >&2
+    printf 'To start fresh, remove %s.\n' "$(source_state_file "$_role")" >&2
+}
+
+# source_relocate <role> <path> [target_link]
+# Sets RESOLVED. A missing source with prior state is matched by inode, then by
+# top-level name overlap. A broken target link is removed with rm -f, which
+# unlinks the link itself and never follows it.
+source_relocate() {
+    _role=$1
+    _path=$2
+    _target=$3
+    RESOLVED=$_path
+    _file=$(source_state_file "$_role")
+
+    if [ -e "$_path" ] || [ -L "$_path" ]; then
+        source_state_save "$_role" "$_path"
+        return 0
+    fi
+
+    _had_broken=0
+    _target_link=0
+    if [ -n "$_target" ] && [ -L "$_target" ]; then
+        _target_link=1
+        if [ ! -e "$_target" ]; then
+            _had_broken=1
+            rm -f -- "$_target" || need_root "remove the broken link $_target"
+        fi
+    fi
+
+    if [ ! -f "$_file" ]; then
+        if [ "$_had_broken" = "1" ]; then
+            source_state_mark_missing "$_role"
+            source_missing "$_role" "$_path" "The target link was removed; the source is gone."
+            exit 1
+        fi
+        if [ "$_target_link" = "1" ]; then
+            source_state_mark_missing "$_role"
+            source_missing "$_role" "$_path" "The target is still a valid link; refusing to replace it with an empty source."
+            exit 1
+        fi
+        return 0
+    fi
+
+    _sdev=""
+    _sino=""
+    if [ -s "$_file" ]; then
+        IFS=' ' read -r _sdev _sino < "$_file" || :
+    fi
+
+    _inode_hits=0
+    _inode_path=""
+    _best_path=""
+    _best_score=0
+    _second_path=""
+    _second_score=0
+
+    _parent=$(dirname -- "$_path")
+    _parent=$(cd -P -- "$_parent" 2>/dev/null && pwd -P) || _parent=""
+    if [ -n "$_parent" ]; then
+        while IFS= read -r _cand; do
+            source_consider "$_file" "$_cand"
+        done <<EOF
+$(find "$_parent" -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null)
+EOF
+    fi
+
+    if [ "$_inode_hits" -eq 0 ]; then
+        # An exact inode match is unique. Otherwise scan the whole root so a
+        # deeper copy cannot hide behind a confident sibling match.
+        # shortcut: moved renames are searched three levels deep; deeper moves
+        # need an explicit source path.
+        while IFS= read -r _cand; do
+            source_consider "$_file" "$_cand"
+        done <<EOF
+$(find "$PORTABLE_ROOT" -mindepth 1 -maxdepth 3 -type d -print 2>/dev/null)
+EOF
+    fi
+
+    if [ "$_inode_hits" -eq 1 ]; then
+        RESOLVED=$_inode_path
+    elif [ "$_inode_hits" -gt 1 ]; then
+        source_missing "$_role" "$_path" "More than one directory has the old identity."
+        exit 1
+    elif [ "$_best_score" -ge 65 ] && [ "$_best_score" -ge $((_second_score + 15)) ]; then
+        RESOLVED=$_best_path
+    else
+        _detail=""
+        if [ -n "$_best_path" ]; then
+            _detail="Closest candidate: $_best_path ($_best_score% name match, second $_second_score%)."
+        fi
+        source_missing "$_role" "$_path" "$_detail"
+        exit 1
+    fi
+
+    source_state_save "$_role" "$RESOLVED"
+    [ "${UPAL_VERBOSE:-}" = "1" ] && printf 'Using %s: %s\n' "$_role" "$RESOLVED" >&2
+}
+
+# Repair managed sources renamed inside the portable root before using them.
+if [ -n "$DAT_SOURCE" ]; then
+    source_relocate dat "$DAT_SOURCE" "$DAT_TARGET"
+    DAT_SOURCE=$RESOLVED
+fi
+_old_bin=""
+if [ -n "$BIN_SOURCE" ] && [ -z "$ENTRIES" ]; then
+    _bin_before=$BIN_SOURCE
+    source_relocate bin "$BIN_SOURCE"
+    BIN_SOURCE=$RESOLVED
+    [ "$BIN_SOURCE" != "$_bin_before" ] && _old_bin=$_bin_before
+    [ "$MAN" = "$_bin_before" ] && MAN=$BIN_SOURCE
+fi
+if [ -n "$DESKTOP_FILE_SOURCE" ] && [ "$DESKTOP_FILE_SOURCE" != "$PORTABLE_ROOT" ] && [ -z "$ENTRIES" ]; then
+    source_relocate desktop "$DESKTOP_FILE_SOURCE"
+    DESKTOP_FILE_SOURCE=$RESOLVED
+fi
 
 # Icon archives: <target>1, <target>2, ...
 # The oldest archive is the icon to restore when the custom icon is removed.
@@ -447,6 +688,10 @@ fi
 # If BIN_SOURCE contains only variant directories, build the ENTRIES list.
 # Set ENTRIES explicitly for layouts that do not follow the PKG convention.
 if [ -z "$ENTRIES" ] && [ -d "$BIN_SOURCE" ]; then
+    _bindir_rel=$BIN_SOURCE
+    case "$_bindir_rel" in
+        "$PORTABLE_ROOT"/*) _bindir_rel=${_bindir_rel#"$PORTABLE_ROOT"/} ;;
+    esac
     _has_files=0
     for _f in "$BIN_SOURCE"/*; do
         [ -f "$_f" ] && { _has_files=1; break; }
@@ -474,18 +719,18 @@ if [ -z "$ENTRIES" ] && [ -d "$BIN_SOURCE" ]; then
             if [ -n "$PKG" ] && [ -e "$PORTABLE_ROOT/${PKG}_${_variant}.desktop" ]; then
                 _desk="${PKG}_${_variant}.desktop"
             elif [ -n "$PKG" ] && [ -e "$_d/${PKG}.desktop" ]; then
-                _desk="bin/${_variant}/${PKG}.desktop"
+                _desk="${_bindir_rel}/${_variant}/${PKG}.desktop"
             fi
 
             _icon=""
             if [ -n "$PKG" ] && [ -e "$PORTABLE_ROOT/${PKG}.svg" ]; then
                 _icon="${PKG}.svg"
             elif [ -n "$PKG" ] && [ -e "$_d/${PKG}.svg" ]; then
-                _icon="bin/${_variant}/${PKG}.svg"
+                _icon="${_bindir_rel}/${_variant}/${PKG}.svg"
             fi
 
             _id="${PKG:-$NAME}"
-            ENTRIES="${ENTRIES}${_variant}|bin/${_variant}|${_exe}|${_desk}|${_icon}|${_id}
+            ENTRIES="${ENTRIES}${_variant}|${_bindir_rel}/${_variant}|${_exe}|${_desk}|${_icon}|${_id}
 "
         done
     fi
@@ -599,7 +844,7 @@ link_or_backup() {
     # Source is a broken symlink - clean up target if it's also a broken symlink
     if [ -L "$_src" ] && [ ! -e "$_src" ]; then
         if [ -L "$_tgt" ] && [ ! -e "$_tgt" ]; then
-            rm -f "$_tgt" || need_root "remove the broken link $_tgt"
+            rm -f -- "$_tgt" || need_root "remove the broken link $_tgt"
         fi
         return 0
     fi
@@ -618,7 +863,7 @@ link_or_backup() {
 
     # Target is a broken symlink - remove and link
     if [ -L "$_tgt" ] && [ ! -e "$_tgt" ]; then
-        rm "$_tgt" || need_root "remove the broken link $_tgt"
+        rm -f -- "$_tgt" || need_root "remove the broken link $_tgt"
         ln -sfn "$_src" "$_tgt" || need_root "link $_tgt"
         own "$_tgt"
         return 0
@@ -685,7 +930,10 @@ if [ -n "$ENTRIES" ]; then
 
         _cmd=""
         if [ -n "$_exec" ] && [ -d "$BIN_TARGET" ]; then
-            _src=$PORTABLE_ROOT/${_bindir:+$_bindir/}$_exec
+            case "$_bindir" in
+                /*) _src=$_bindir/$_exec ;;
+                *)  _src=$PORTABLE_ROOT/${_bindir:+$_bindir/}$_exec ;;
+            esac
             _cmd="${PKG:-$NAME}-$_name"
             link_or_backup "$_src" "$BIN_TARGET/$_cmd" || _cmd=""
         fi
@@ -775,26 +1023,37 @@ else
 fi
 
 # Clean up broken symlinks if sources were removed
-if [ -n "$DAT_TARGET" ] && [ -L "$DAT_TARGET" ] && [ ! -e "$DAT_TARGET" ]; then
-    rm -f "$DAT_TARGET"
-fi
-
-if [ -d "$BIN_TARGET" ]; then
+if [ -n "$BIN_SOURCE" ] && [ -d "$BIN_TARGET" ]; then
     for link in "$BIN_TARGET"/*; do
         [ -L "$link" ] || continue
         [ -e "$link" ] && continue
-        case "$(readlink "$link")" in
+        _link_target=$(readlink "$link")
+        case "$_link_target" in
             "$BIN_SOURCE"/*) rm -f "$link" ;;
+            *)
+                if [ -n "$_old_bin" ]; then
+                    case "$_link_target" in "$_old_bin"/*) rm -f "$link" ;; esac
+                fi
+                ;;
         esac
     done
 fi
 
 # Link DAT_SOURCE to DAT_TARGET
 if [ -n "$DAT_TARGET" ]; then
-    [ -e "$DAT_SOURCE" ] || mkdir -p "$DAT_SOURCE" || need_root "create $DAT_SOURCE"
+    if [ -L "$DAT_SOURCE" ] && [ ! -e "$DAT_SOURCE" ]; then
+        printf 'Broken data source link: %s\n' "$DAT_SOURCE" >&2
+        exit 1
+    fi
+    # A missing source with prior state was handled above. Reaching here with
+    # a missing source means this is the first run.
+    if [ ! -e "$DAT_SOURCE" ] && [ ! -L "$DAT_SOURCE" ]; then
+        mkdir -p "$DAT_SOURCE" || need_root "create $DAT_SOURCE"
+    fi
     own_path "$DAT_SOURCE"
     prepare_data_target "$DAT_SOURCE" "$DAT_TARGET"
     link_or_backup "$DAT_SOURCE" "$DAT_TARGET" bak
+    source_state_save dat "$DAT_SOURCE"
 fi
 
 # Link binaries from BIN_SOURCE to BIN_TARGET
@@ -933,7 +1192,10 @@ EOF
     fi
 
     if [ -n "$_sel_bindir" ]; then
-        cd "$PORTABLE_ROOT/$_sel_bindir" || exit 1
+        case "$_sel_bindir" in
+            /*) cd "$_sel_bindir" || exit 1 ;;
+            *)  cd "$PORTABLE_ROOT/$_sel_bindir" || exit 1 ;;
+        esac
     else
         cd "$PORTABLE_ROOT" || exit 1
     fi

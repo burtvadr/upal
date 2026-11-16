@@ -83,6 +83,8 @@ Precedence, highest first:
 
 Detection never deletes a real file. Ambiguous layouts abort and print the candidates instead of guessing.
 
+Once a managed source exists, its device, inode, and top-level names and types are remembered under `${XDG_STATE_HOME:-$HOME/.local/state}/upal/`. If `DAT_SOURCE`, `BIN_SOURCE`, or a custom `DESKTOP_FILE_SOURCE` disappears, the next run searches for it before linking or launching. An exact inode match wins. Otherwise at least two top-level entries must match, with 65% confidence and a 15-point lead over the next candidate. A confident match updates the source path and repairs the links. No match, or a tie, stops the run and prints the closest candidates. A broken target link is removed first, but no empty source directory is created when the source was known before; a target that still points to real data is left alone and the run stops. A first run may still create `DAT_SOURCE` to adopt existing host data. The state stays outside the portable folder; remove `source-<key>-<role>` to start fresh.
+
 ## Backends
 
 `PACKAGE_MANAGER` selects the backend. Support means the runner owns the install and run logic for that backend; there is no universal package API.
@@ -218,6 +220,8 @@ A portable folder can be zipped into one file for transport. Unzip it, click the
 The target engine enforces these rules. The reference template implements an earlier subset and does not yet meet all of them.
 
 - Existing host data is copied into the portable folder on first link and the host copy is kept as `.bak`. A real conflict is backed up as `<path>1`, `<path>2`, and so on. Empty target directories are removed. Backup is on by default (`BACKUP="yes"`).
+- A missing managed source is never replaced by an empty directory. The runner removes a broken target link, then tries inode and content matching; if it cannot identify the renamed directory with confidence, it stops.
+- A broken link is removed with `rm -f` on the link itself. The destination is never followed or deleted, and no recursive delete is used.
 - A real file or directory is never replaced by a symlink unless the backup succeeds. If a target needs root, the runner stops and asks you to re-run it with sudo; it never invokes sudo itself.
 - Cleanup only touches links whose name and target belong to this runner. No broad `rm "$BIN_TARGET"/*`. A link that already resolves to the same inode is left untouched, even if it points through another path.
 - Every run is idempotent.
@@ -231,6 +235,7 @@ The target engine enforces these rules. The reference template implements an ear
 |---|---|
 | Single-file POSIX runner | implemented |
 | Data link (host → portable) | implemented |
+| Self-healing source relocation | implemented |
 | Binary link-out | implemented |
 | Binary link-in | specified |
 | `env` and `link-out` data methods | specified |
