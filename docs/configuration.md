@@ -20,6 +20,7 @@ PKG=""
 PACKAGE_MANAGER="auto"
 FLATPAK_ID=""
 FLATPAK_SCOPE="user"
+FLATPAK_OFFLOAD=""
 BIN_NAMES=""
 DAT_SOURCE=""
 DAT_TARGET=""
@@ -62,6 +63,7 @@ KILL_TERMINAL="yes"
 | `PACKAGE_MANAGER` | `auto` | `auto`/`native` (PackageKit chain), `distro`, `flatpak`, `snap`, `nix`, `brew`, `toolpak`, `pkgit`, `cpak`, or `none`. |
 | `FLATPAK_ID` | `""` | Flatpak application ID. Setting it selects the Flatpak profile when `PACKAGE_MANAGER` is `auto`; `dat/` and `bin/` select the portable sides. |
 | `FLATPAK_SCOPE` | `user` | `user` or `system`. Scope for the flathub remote, app install, and launch. User scope never needs root. |
+| `FLATPAK_OFFLOAD` | `""` | Space-separated top-level entries under the active deployment's `files/` to move into `$PORTABLE_ROOT/bin/`. Experimental; adds a read-only Flatpak filesystem override. |
 | `BIN_NAMES` | `""` | Commands to check, link, and run. Empty means the words in `PKG`, or the runner filename. |
 | `DAT_SOURCE` | `""` | Portable data directory. Empty means detect; if `DAT_TARGET` is set, defaults to `$PORTABLE_ROOT/dat`. |
 | `DAT_TARGET` | `""` | Host data path. Empty means XDG mapping when the data directory is XDG-shaped, otherwise no redirection. |
@@ -354,7 +356,15 @@ MyApp/
 
 Create only `dat/` to preserve data, only `bin/` to keep a portable launcher, or both. The runner does not create the side you omit. A previously tracked side that disappears triggers rename recovery; if you intend to stop preserving it, remove the matching `source-<key>-dat` or `source-<key>-bin` state file.
 
-The data path is the same for user and system installs. User scope never needs root; system scope may need administrator authentication. Flatpak does not support symlinking an individual app installation directory (`~/.local/share/flatpak/app/$FLATPAK_ID` or `/var/lib/flatpak/app/$FLATPAK_ID`); the runner never does that. Symlinking the arch directory (`.../app/$FLATPAK_ID/$ARCH`) is not a workaround: Flatpak stops listing the app, and update/uninstall cannot find it. Symlinking the deployment's `files` directory is also not enough: listing and updates still work, but `flatpak run` fails in bwrap. To relocate the whole installation, use a custom installation or `FLATPAK_USER_DIR`; to offload only one app, use a bind mount. The data path `~/.var/app/$FLATPAK_ID` is separate, and Flatpak resolves a symlinked data directory (tested with Flatpak 1.16). Some applications write outside `~/.var/app/$FLATPAK_ID`; add those paths explicitly with the `redirect` helper in a hook. Heroic's `~/Games` is the common example.
+The data path is the same for user and system installs. User scope never needs root; system scope may need administrator authentication. Flatpak does not support symlinking an individual app installation directory (`~/.local/share/flatpak/app/$FLATPAK_ID` or `/var/lib/flatpak/app/$FLATPAK_ID`); the runner never does that. Symlinking the arch directory (`.../app/$FLATPAK_ID/$ARCH`) is not a workaround: Flatpak stops listing the app, and update/uninstall cannot find it. Symlinking the deployment's `files` directory itself is also not enough: listing and updates still work, but `flatpak run` fails in bwrap. Symlinking an entry **inside** `files` works when the target is exposed to the sandbox with a read-only filesystem override; `FLATPAK_OFFLOAD` does that. It keeps `files` a real directory, so listing and updates still work, and the override lets `flatpak run` resolve the symlink.
+
+```sh
+FLATPAK_OFFLOAD="app-bundle"
+```
+
+`FLATPAK_OFFLOAD` takes space-separated top-level names under the active deployment's `files/`. For each name, the runner moves it to `$PORTABLE_ROOT/bin/<name>`, replaces the deployment entry with a symlink, and adds `flatpak override --user --filesystem="$PORTABLE_ROOT/bin:ro"`. On an update, the new deployment entry is moved in and the previous target is kept as `<name>1`, `<name>2`. Do not list `.ref`; it is used for deployment locking. The app installation must be writable: user scope needs no root, system scope does. This is experimental; a future Flatpak release can change the behavior.
+
+The supported whole-installation route is `FLATPAK_USER_DIR` or a custom installation; a bind mount offloads one app without the override. The data path `~/.var/app/$FLATPAK_ID` is separate, and Flatpak resolves a symlinked data directory (tested with Flatpak 1.16). Some applications write outside `~/.var/app/$FLATPAK_ID`; add those paths explicitly with the `redirect` helper in a hook. Heroic's `~/Games` is the common example.
 
 ## Detection
 

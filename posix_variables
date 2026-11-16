@@ -9,6 +9,7 @@ PORTABLE_ROOT=$(cd -P -- "$(dirname -- "$0")" && command pwd -P)
 PACKAGE_MANAGER="auto"
 FLATPAK_ID=""
 FLATPAK_SCOPE="user"
+FLATPAK_OFFLOAD=""
 PKG=""
 NAME="$PKG"
 DAT_SOURCE="$PORTABLE_ROOT/dat"
@@ -1027,6 +1028,60 @@ link_or_backup() {
     own "$_tgt"
     return 0
 }
+
+# Flatpak experimental offload: move named top-level entries out of the active
+# deployment's files/ into the portable bin/ and expose that target read-only.
+# files/ stays a real directory, so Flatpak still lists and updates the app.
+if [ -n "$FLATPAK_ID" ] && [ -n "${FLATPAK_OFFLOAD:-}" ]; then
+    _flatpak_deploy=$(flatpak info $_flatpak_scope -l "$FLATPAK_ID" 2>/dev/null) || _flatpak_deploy=""
+    if [ -z "$_flatpak_deploy" ] || [ ! -d "$_flatpak_deploy/files" ]; then
+        printf 'Cannot offload Flatpak files for %s: deployment not found.\n' "$FLATPAK_ID" >&2
+        exit 1
+    fi
+    mkdir -p "$PORTABLE_ROOT/bin" || need_root "create $PORTABLE_ROOT/bin"
+    own_path "$PORTABLE_ROOT/bin"
+    _flatpak_bin=$(cd -P -- "$PORTABLE_ROOT/bin" && pwd -P) || _flatpak_bin="$PORTABLE_ROOT/bin"
+
+    for _off in $FLATPAK_OFFLOAD; do
+        case "$_off" in
+            ""|.|..|.ref|*/*)
+                printf 'Invalid FLATPAK_OFFLOAD entry: %s\n' "$_off" >&2
+                exit 1
+                ;;
+        esac
+        _host="$_flatpak_deploy/files/$_off"
+        _target="$_flatpak_bin/$_off"
+
+        if [ -L "$_host" ]; then
+            _link=$(readlink -- "$_host")
+            if [ ! -e "$_target" ]; then
+                printf 'Missing Flatpak offload target: %s\n' "$_target" >&2
+                exit 1
+            fi
+            if [ "$_link" = "$_target" ] || [ "$_host" -ef "$_target" ]; then
+                continue
+            fi
+            printf 'Refusing to replace existing Flatpak symlink: %s\n' "$_host" >&2
+            exit 1
+        fi
+        if [ ! -e "$_host" ]; then
+            printf 'Missing Flatpak deployment entry: %s\n' "$_host" >&2
+            exit 1
+        fi
+        if [ -e "$_target" ] || [ -L "$_target" ]; then
+            backup_target "$_target" number
+        fi
+        mv "$_host" "$_target" || need_root "move $_host to $_target"
+        ln -s "$_target" "$_host" || need_root "link $_host"
+    done
+
+    if ! flatpak override --user --show "$FLATPAK_ID" 2>/dev/null | grep -Fq "$_flatpak_bin:ro"; then
+        flatpak override --user --filesystem="$_flatpak_bin:ro" "$FLATPAK_ID" || {
+            printf 'Could not expose %s to %s.\n' "$_flatpak_bin" "$FLATPAK_ID" >&2
+            exit 1
+        }
+    fi
+fi
 
 # Desktop entries and icons
 if [ -n "$ENTRIES" ]; then
