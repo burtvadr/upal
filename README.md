@@ -138,7 +138,7 @@ The runner:
 - runs with `flatpak run --user|--system "$FLATPAK_ID"`;
 - if a data source exists, links `~/.var/app/$FLATPAK_ID` to it;
 - if the binary source is a symlink, uses it as-is; point it at the active deployment's `files/bin` (or `files`) to expose the binaries without generated files;
-- if the binary source is a real directory, creates `$BIN_SOURCE/$FLATPAK_ID` as a read-only reference to the active deployment's `files/bin` (or `files`); the link uses `active`, so it follows Flatpak updates;
+- if the binary source is a real directory, creates `$BIN_SOURCE/$FLATPAK_ID` as a read-only reference to the active deployment's `files/bin` (or `files`); the link uses `active`, so it follows Flatpak updates. An empty directory, or one holding only that reference, is replaced by a symlink to the same target; any other entry keeps the directory and the nested reference;
 - if no portable icon is present, uses the Flatpak app's exported icon for the portable root, the data target, and `BIN_TARGET` when set, through `gio`;
 - if `FLATPAK_OFFLOAD` is set, moves the named entries from the active deployment's `files/` into `BIN_SOURCE`, symlinks them back, and adds a read-only filesystem override for `BIN_SOURCE`;
 - never links the app or arch installation directories;

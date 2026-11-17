@@ -1243,14 +1243,30 @@ if [ -n "$FLATPAK_ID" ] && [ -n "$BIN_SOURCE" ] && [ -d "$BIN_SOURCE" ] && [ ! -
     if flatpak_resolve && [ -d "$_fp_bin" ]; then
         BIN_TARGET=$_fp_bin
         _flatpak_link="$BIN_SOURCE/$FLATPAK_ID"
-        if [ -L "$_flatpak_link" ]; then
-            rm -f -- "$_flatpak_link" || need_root "replace $_flatpak_link"
-        elif [ -e "$_flatpak_link" ]; then
-            die "Refusing to replace $_flatpak_link"
+        _replaced=0
+        _entries=$(ls -A -- "$BIN_SOURCE" 2>/dev/null)
+        # An empty directory, or one holding only the managed reference, is
+        # replaced by the reference itself. rmdir keeps it safe: any other
+        # entry stops the conversion.
+        if [ -z "$_entries" ] || { [ "$_entries" = "$FLATPAK_ID" ] && [ -L "$_flatpak_link" ]; }; then
+            [ -L "$_flatpak_link" ] && rm -f -- "$_flatpak_link"
+            if rmdir -- "$BIN_SOURCE" 2>/dev/null; then
+                ln -s "$_fp_bin" "$BIN_SOURCE" || need_root "link $BIN_SOURCE"
+                own "$BIN_SOURCE"
+                log INFO "Flatpak binaries: $BIN_SOURCE -> $_fp_bin"
+                _replaced=1
+            fi
         fi
-        ln -s "$_fp_bin" "$_flatpak_link" || need_root "link $_flatpak_link"
-        own "$_flatpak_link"
-        log INFO "Flatpak binaries: $_flatpak_link -> $_fp_bin"
+        if [ "$_replaced" = "0" ]; then
+            if [ -L "$_flatpak_link" ]; then
+                rm -f -- "$_flatpak_link" || need_root "replace $_flatpak_link"
+            elif [ -e "$_flatpak_link" ]; then
+                die "Refusing to replace $_flatpak_link"
+            fi
+            ln -s "$_fp_bin" "$_flatpak_link" || need_root "link $_flatpak_link"
+            own "$_flatpak_link"
+            log INFO "Flatpak binaries: $_flatpak_link -> $_fp_bin"
+        fi
     fi
 fi
 
