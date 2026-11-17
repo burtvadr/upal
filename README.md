@@ -245,7 +245,7 @@ The target engine enforces these rules. The reference template implements an ear
 - A real file or directory is never replaced by a symlink unless the backup succeeds. If a target needs root, the runner stops and asks you to re-run it with sudo; it never invokes sudo itself.
 - Cleanup only touches links whose name and target belong to this runner. No broad `rm "$CMD_TARGET"/*`. A link that already resolves to the same inode is left untouched, even if it points through another path.
 - Every run is idempotent.
-- `UPAL_DRY_RUN=1` prints the planned actions and changes nothing. `UPAL_VERBOSE=1` prints recovered source paths.
+- `UPAL_DRY_RUN=1` prints the planned actions and changes nothing. `UPAL_LOG_LEVEL=debug|info|warn|error` controls the timestamped log on stderr (default `info`); `UPAL_VERBOSE=1` selects `debug`.
 - The filesystem check runs once, on the portable root, and exits cleanly. It does not kill the terminal from a subshell.
 - Paths with spaces and non-ASCII names are quoted everywhere.
 

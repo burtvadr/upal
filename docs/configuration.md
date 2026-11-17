@@ -478,7 +478,14 @@ When the icon changes, the previous theme icon is kept as `<id>.<ext>1`, then `<
 | Variable | Effect |
 |---|---|
 | `UPAL_DRY_RUN=1` | Print planned actions, change nothing, exit 0. |
-| `UPAL_VERBOSE=1` | Print recovered source paths and actions. |
+| `UPAL_LOG_LEVEL` | `debug`, `info` (default), `warn`, or `error`. Logs go to stderr as `[YYYY-MM-DD HH:MM:SS] LEVEL message`. |
+| `UPAL_VERBOSE=1` | Old name for `UPAL_LOG_LEVEL=debug`; prints detected and recovered sources. |
+
+```text
+[2026-11-17 11:30:01] INFO  UPAL started: /home/user/Apps/MyApp/run
+[2026-11-17 11:30:01] INFO  Data linked: /home/user/.config/MyApp -> /home/user/Apps/MyApp/dat
+[2026-11-17 11:30:01] INFO  Starting command: myapp
+```
 
 Environment variables are used instead of CLI flags so application arguments from `%U` and `%F` pass through untouched.
 
