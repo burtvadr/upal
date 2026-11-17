@@ -77,7 +77,7 @@ The reference template uses `PKG` as the command name. The target contract adds 
 The header decides. An empty source triggers name inference:
 
 1. **Explicit values** — `DAT_SOURCE`, `DAT_TARGET`, `BIN_SOURCE`, `BIN_TARGET`, `CMD_TARGET`. Naming a source disables inference for that side.
-2. **Name lists** — `LANG_INFERRING_DATA` and `LANG_INFERRING_BIN` are checked at the portable root and one level below. One match wins; several abort with the candidates; none leaves that side off. Contents are never inspected.
+2. **Name lists** — `LANG_INFERRING_DATA` and `LANG_INFERRING_BIN` are checked at the portable root first, then one level below. A root-level match wins; several at the same depth abort with the candidates; none leaves that side off. Contents are never inspected.
 3. **Flatpak** — `DAT_TARGET` defaults to `~/.var/app/$FLATPAK_ID` when a data source exists.
 4. **No side** — no binary source means no binary mapping; the app runs from `PATH` or `flatpak run`. No data target means no redirection.
 

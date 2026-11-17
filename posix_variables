@@ -386,15 +386,21 @@ EOF
     [ "${UPAL_VERBOSE:-}" = "1" ] && printf 'Using %s: %s\n' "$_role" "$RESOLVED" >&2
 }
 
-# detect_side <role> <words>
-# An empty source is inferred by name: the portable root and one level below
-# it. Sets DETECTED. Several matches abort instead of guessing.
+# detect_side <role> <root|nested> <words>
+# One depth at a time. A root-level match beats a nested one. Sets DETECTED;
+# several matches at the same depth abort instead of guessing.
 detect_side() {
     _role=$1
+    _depth=$2
     _matches=""
     _count=0
-    for _word in $2; do
-        for _dir in "$PORTABLE_ROOT/$_word" "$PORTABLE_ROOT"/*/"$_word"; do
+    for _word in $3; do
+        if [ "$_depth" = "root" ]; then
+            _dirs="$PORTABLE_ROOT/$_word"
+        else
+            _dirs=$(printf '%s\n' "$PORTABLE_ROOT"/*/"$_word")
+        fi
+        while IFS= read -r _dir; do
             [ -d "$_dir" ] || continue
             if printf '%s\n' "$_matches" | grep -Fxq -- "$_dir"; then
                 continue
@@ -402,7 +408,9 @@ detect_side() {
             _matches="$_matches$_dir
 "
             _count=$((_count + 1))
-        done
+        done <<EOF
+$_dirs
+EOF
     done
     if [ "$_count" -gt 1 ]; then
         printf 'Ambiguous %s source; candidates:\n' "$_role" >&2
@@ -416,7 +424,8 @@ detect_side() {
 
 # An empty source uses the name list; an explicit value opts out.
 if [ -z "$DAT_SOURCE" ]; then
-    detect_side dat "${LANG_INFERRING_DATA:-}"
+    detect_side dat root "${LANG_INFERRING_DATA:-}"
+    [ -z "$DETECTED" ] && detect_side dat nested "${LANG_INFERRING_DATA:-}"
     DAT_SOURCE=$DETECTED
     if [ -z "$DAT_SOURCE" ] && [ -n "$DAT_TARGET" ]; then
         # A target with no named source adopts at the first data word.
@@ -429,7 +438,8 @@ if [ -z "$DAT_SOURCE" ]; then
     fi
 fi
 if [ -z "$BIN_SOURCE" ] && [ -z "$ENTRIES" ]; then
-    detect_side bin "${LANG_INFERRING_BIN:-}"
+    detect_side bin root "${LANG_INFERRING_BIN:-}"
+    [ -z "$DETECTED" ] && detect_side bin nested "${LANG_INFERRING_BIN:-}"
     BIN_SOURCE=$DETECTED
 fi
 if [ -n "$DAT_SOURCE" ] && [ -n "$BIN_SOURCE" ]; then

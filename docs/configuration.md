@@ -68,7 +68,7 @@ KILL_TERMINAL="yes"
 | `BACKUP` | `yes` | Adopted host data keeps a `<path>.bak` copy; a real conflict is kept as `<path>1`, `<path>2`. `no` aborts on conflict. |
 | `BIN_MODE` | `auto` | `auto`, `in`, `out`, or `copy`. |
 | `BIN_SOURCE` | `""` | Portable binary directory or single file. Empty triggers name inference from `LANG_INFERRING_BIN`; an explicit value disables it. |
-| `LANG_INFERRING_DATA` | `dat data dados config user` | Words that name a data directory. Matched at the portable root and one level below. Several matches abort with the candidates. |
+| `LANG_INFERRING_DATA` | `dat data dados config user` | Words that name a data directory. Checked at the portable root first, then one level below; a root-level match wins. Several matches at the same depth abort with the candidates. |
 | `LANG_INFERRING_BIN` | `bin binary binaries binarios executables executável executáveis executaveis executavel` | Words that name a binary directory. Same matching rule. |
 | `BIN_TARGET` | `""` | Host application binary directory or single file, for example `/opt/app-bin`. Used by `out` only. Empty disables binary-out linking. For multi-entry suites, each entry goes in its own `BIN_TARGET/<entry>/` directory. This is not a PATH directory; command links use `CMD_TARGET`. |
 | `CMD_TARGET` | `""` | Directory for per-entry command symlinks. Empty auto-selects `~/.local/bin`, then `~/bin`, then `/usr/local/bin` or `/usr/bin`. Used only when `ENTRIES` is set. |
@@ -369,8 +369,8 @@ The supported whole-installation route is `FLATPAK_USER_DIR` or a custom install
 
 Empty `DAT_SOURCE` or `BIN_SOURCE` means name inference. An explicit value disables it for that side.
 
-- The lists `LANG_INFERRING_DATA` and `LANG_INFERRING_BIN` supply the names. Each word is checked at `$PORTABLE_ROOT/<word>` and `$PORTABLE_ROOT/*/<word>`.
-- One match sets the source. Several matches abort and print the candidates. No match leaves that side off.
+- The lists `LANG_INFERRING_DATA` and `LANG_INFERRING_BIN` supply the names. Each word is checked at `$PORTABLE_ROOT/<word>` first, then at `$PORTABLE_ROOT/*/<word>`. A root-level match wins.
+- Several matches at the same depth abort and print the candidates. No match leaves that side off.
 - `ENTRIES` disables binary inference; the entries name their own directories.
 - A source cannot live inside the other role: data inside the binary directory, or the reverse, aborts.
 - If `DAT_TARGET` is set, no data directory matched, and the data list is not empty, `$PORTABLE_ROOT/<first data word>` is created, so existing host data can be adopted.
