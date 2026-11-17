@@ -35,7 +35,7 @@ Binaries use the same idea with a different unit: a command name, a source direc
 
 ## Lifecycle
 
-1. Resolve `PORTABLE_ROOT` from the runner's real path.
+1. Resolve `PORTABLE_ROOT` from the runner's directory.
 2. Preflight: filesystem type, writability, dry-run.
 3. Resolve `PKG` and `BIN_NAMES`.
 4. Detect binaries and data, repairing a managed source renamed inside the folder.

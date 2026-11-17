@@ -329,7 +329,7 @@ The manifest is optional desktop integration, not a second manager. Normal direc
 
 ## Layout rules
 
-- The runner must stay at the portable root, or be symlinked to it; it resolves its own real path.
+- The runner must stay at the portable root. It finds the root from its own directory; a symlink placed elsewhere is not supported.
 - `bin/` and `dat/` are defaults, not requirements. Point `BIN_SOURCE` and `DAT_SOURCE` anywhere.
 - If `bin/` and root executables both exist, `bin/` wins.
 - The runner never treats itself as an application binary.
