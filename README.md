@@ -114,13 +114,13 @@ A GTK tool will wrap `strace`/`ptrace` to observe which paths an application tou
 
 ## Flatpak profile
 
-Flatpak is the cleanest case because the app ID fills the standard paths. Create `dat/` to make data portable, `bin/` to keep a portable launcher, or both. No `DAT_TARGET` or `BIN_TARGET` is needed.
+Flatpak is the cleanest case because the app ID fills the standard paths. Create `dat/` to make data portable, `bin/` to reference the app's binaries, or both. No `DAT_TARGET` or `BIN_TARGET` is needed.
 
 ```text
 MyApp/
 ├── runner
 ├── dat/            # optional: portable ~/.var/app/$FLATPAK_ID
-└── bin/            # optional: portable launcher for the Flatpak app
+└── bin/            # optional: reference to the app's binaries
 ```
 
 ```sh
@@ -137,23 +137,24 @@ The runner:
 - installs the app with `flatpak install --user|--system -y flathub` when it is missing;
 - runs with `flatpak run --user|--system "$FLATPAK_ID"`;
 - if `dat/` exists, links `~/.var/app/$FLATPAK_ID` to it;
-- if `bin/` exists, creates `bin/<command>` as a launcher for `flatpak run`, using the app's `Command=` metadata;
-- if `bin/` exists, creates `bin/$FLATPAK_ID` as a read-only reference to the active deployment's `files/bin` (or `files`); the link uses `active`, so it follows Flatpak updates;
-- if no portable icon is present, uses the Flatpak app's exported icon for the portable root, `BIN_TARGET`, and data target through `gio`;
+- if `bin/` is a symlink, uses it as-is; point it at the active deployment's `files/bin` (or `files`) to expose the binaries without generated files;
+- if `bin/` is a real directory, creates `bin/$FLATPAK_ID` as a read-only reference to the active deployment's `files/bin` (or `files`); the link uses `active`, so it follows Flatpak updates;
+- if no portable icon is present, uses the Flatpak app's exported icon for the portable root, the data target, and `BIN_TARGET` when set, through `gio`;
 - if `FLATPAK_OFFLOAD` is set, moves the named entries from the active deployment's `files/` into `bin/`, symlinks them back, and adds a read-only filesystem override for `bin/`;
 - never links the app or arch installation directories;
 - leaves host data alone when `dat/` is absent;
-- creates no launcher when `bin/` is absent;
+- creates no binary reference when `bin/` is absent;
+- generates no launcher; `run` is the launcher and calls `flatpak run`.
 - uses Flatpak's exported desktop entry and icon; a portable `.desktop` or icon is optional.
 
 `PACKAGE_MANAGER` may be omitted; setting `FLATPAK_ID` selects the Flatpak profile when the manager is `auto`. `FLATPAK_SCOPE` defaults to `user`; `system` uses the system-wide installation and may require administrator authentication.
 
 ```text
 ~/.var/app/com.developer.App -> ~/Apps/MyApp/dat
-~/Apps/MyApp/bin/<command>  # exec flatpak run --user "com.developer.App" "$@"
+~/Apps/MyApp/bin -> ~/.local/share/flatpak/app/com.developer.App/$ARCH/stable/active/files/bin
 ```
 
-The data path is the same for user and system installs. The default `bin/` side is a read-only reference inside the portable root: `bin/$FLATPAK_ID` points at the active deployment's `files/bin` (or `files`), and the Flatpak installation is untouched. `bin/<command>` is the launcher. Flatpak does not support symlinking an individual app installation directory (`~/.local/share/flatpak/app/$FLATPAK_ID` or `/var/lib/flatpak/app/$FLATPAK_ID`); the runner never does that. Symlinking the arch directory (`.../app/$FLATPAK_ID/$ARCH`) is not a workaround either: Flatpak stops listing the app, and update/uninstall cannot find it. Symlinking the deployment's `files` directory itself is also not enough: listing and updates still work, but `flatpak run` fails in bwrap. Symlinking an entry **inside** `files` works when the target is exposed with a read-only filesystem override; `FLATPAK_OFFLOAD` does that automatically. It keeps `files` a real directory, so listing and updates still work, and the override lets the sandbox resolve the symlink. It is experimental, and the app installation must be writable (user scope no root; system scope root). On updates the previous target is kept as `<name>1`, `<name>2`; do not list `.ref`. To relocate the whole Flatpak installation, use a custom installation or `FLATPAK_USER_DIR`; a bind mount offloads one app without the override. The data directory `~/.var/app/$FLATPAK_ID` is separate, and Flatpak resolves a symlinked data directory (tested with Flatpak 1.16). Some applications write outside `~/.var/app/$FLATPAK_ID`: Heroic creates `~/Games`. Add those explicitly if you want them portable; they are not automatic.
+The data path is the same for user and system installs. `bin/` is optional and has two forms: a symlink to the active deployment's `files/bin` (or `files`), or a real directory holding `bin/$FLATPAK_ID` as a read-only reference to the same deployment. Both follow the `active` path and leave the Flatpak installation untouched. No launcher is generated; `run` calls `flatpak run`. Flatpak does not support symlinking an individual app installation directory (`~/.local/share/flatpak/app/$FLATPAK_ID` or `/var/lib/flatpak/app/$FLATPAK_ID`); the runner never does that. Symlinking the arch directory (`.../app/$FLATPAK_ID/$ARCH`) is not a workaround either: Flatpak stops listing the app, and update/uninstall cannot find it. Symlinking the deployment's `files` directory itself is also not enough: listing and updates still work, but `flatpak run` fails in bwrap. Symlinking an entry **inside** `files` works when the target is exposed with a read-only filesystem override; `FLATPAK_OFFLOAD` does that automatically. It keeps `files` a real directory, so listing and updates still work, and the override lets the sandbox resolve the symlink. It is experimental, and the app installation must be writable (user scope no root; system scope root). On updates the previous target is kept as `<name>1`, `<name>2`; do not list `.ref`. To relocate the whole Flatpak installation, use a custom installation or `FLATPAK_USER_DIR`; a bind mount offloads one app without the override. The data directory `~/.var/app/$FLATPAK_ID` is separate, and Flatpak resolves a symlinked data directory (tested with Flatpak 1.16). Some applications write outside `~/.var/app/$FLATPAK_ID`: Heroic creates `~/Games`. Add those explicitly if you want them portable; they are not automatic.
 
 ## Methods
 

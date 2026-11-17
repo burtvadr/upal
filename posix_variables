@@ -804,7 +804,7 @@ fi
 
 # If BIN_SOURCE contains only variant directories, build the ENTRIES list.
 # Set ENTRIES explicitly for layouts that do not follow the PKG convention.
-if [ -z "$ENTRIES" ] && [ -d "$BIN_SOURCE" ]; then
+if [ -z "$ENTRIES" ] && [ -z "$FLATPAK_ID" ] && [ -d "$BIN_SOURCE" ]; then
     _bindir_rel=$BIN_SOURCE
     case "$_bindir_rel" in
         "$PORTABLE_ROOT"/*) _bindir_rel=${_bindir_rel#"$PORTABLE_ROOT"/} ;;
@@ -902,17 +902,6 @@ flatpak_resolve() {
     return 0
 }
 
-# Flatpak bin side: a portable launcher, not a copy of the immutable app.
-flatpak_launcher() {
-    cat > "$1" <<EOF || need_root "write $1"
-#!/bin/sh
-# Managed by UPAL: Flatpak launcher
-exec flatpak run $_flatpak_scope "$FLATPAK_ID" "\$@"
-EOF
-    chmod +x "$1" 2>/dev/null || need_root "make $1 executable"
-    own "$1"
-}
-
 # Find a Flatpak app icon in the deployment or exported theme.
 flatpak_icon_find() {
     _base=$1
@@ -970,30 +959,6 @@ flatpak_icon_path() {
 
     return 1
 }
-
-if [ -n "$FLATPAK_ID" ] && [ -e "$BIN_SOURCE" ]; then
-    _fp_cmd=$(flatpak info $_flatpak_scope -m "$FLATPAK_ID" 2>/dev/null | sed -n 's/^Command=//p' | head -n 1)
-    _fp_cmd=${_fp_cmd%% *}
-    _fp_cmd=${_fp_cmd##*/}
-    [ -n "$_fp_cmd" ] || _fp_cmd=${PKG:-${FLATPAK_ID##*.}}
-
-    _fp_wrapper=""
-    if [ -d "$BIN_SOURCE" ] && [ ! -L "$BIN_SOURCE" ]; then
-        _fp_wrapper="$BIN_SOURCE/$_fp_cmd"
-    elif [ -f "$BIN_SOURCE" ] || [ -L "$BIN_SOURCE" ]; then
-        _fp_wrapper=$BIN_SOURCE
-    fi
-
-    if [ -n "$_fp_wrapper" ] && [ -d "$_fp_wrapper" ]; then
-        printf 'Flatpak launcher path is a directory: %s\n' "$_fp_wrapper" >&2
-    elif [ -n "$_fp_wrapper" ] && [ -L "$_fp_wrapper" ]; then
-        : # user-provided link
-    elif [ -n "$_fp_wrapper" ] && [ -e "$_fp_wrapper" ]; then
-        grep -q '^# Managed by UPAL: Flatpak launcher$' "$_fp_wrapper" 2>/dev/null && flatpak_launcher "$_fp_wrapper"
-    elif [ -n "$_fp_wrapper" ]; then
-        flatpak_launcher "$_fp_wrapper"
-    fi
-fi
 
 # backup_target <path> [bak|number]
 # Move path to path.bak, or to path1, path2, ... when the mode is number.
@@ -1109,6 +1074,10 @@ link_or_backup() {
 # deployment's files/ into the portable bin/ and expose that target read-only.
 # files/ stays a real directory, so Flatpak still lists and updates the app.
 if [ -n "$FLATPAK_ID" ] && [ -n "${FLATPAK_OFFLOAD:-}" ]; then
+    if [ -L "$PORTABLE_ROOT/bin" ]; then
+        printf 'FLATPAK_OFFLOAD needs a real bin/ directory, not a symlink: %s\n' "$PORTABLE_ROOT/bin" >&2
+        exit 1
+    fi
     flatpak_resolve && [ -d "$_fp_files" ] || {
         printf 'Cannot offload Flatpak files for %s: deployment not found.\n' "$FLATPAK_ID" >&2
         exit 1
@@ -1158,9 +1127,9 @@ if [ -n "$FLATPAK_ID" ] && [ -n "${FLATPAK_OFFLOAD:-}" ]; then
     fi
 fi
 
-# Flatpak bin reference: link the active deployment's binary directory inside
-# the portable root. The link points at the stable active path, so it follows
-# updates without modifying the Flatpak installation.
+# Flatpak bin reference: a symlinked bin/ is used as-is. A real bin/ gets a
+# link to the active deployment's binary directory. The link uses the stable
+# active path, so it follows updates without modifying the Flatpak installation.
 if [ -n "$FLATPAK_ID" ] && [ -d "$PORTABLE_ROOT/bin" ] && [ ! -L "$PORTABLE_ROOT/bin" ]; then
     if flatpak_resolve && [ -d "$_fp_bin" ]; then
         BIN_TARGET=$_fp_bin
