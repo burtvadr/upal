@@ -37,12 +37,16 @@ CACHE_TARGET=""
 MAN="$BIN_SOURCE"
 KILL_TERMINAL="yes"
 
+# Probes used throughout the engine
+is_root() { [ "$(id -u)" -eq 0 ]; }
+have() { command -v "$1" >/dev/null 2>&1; }
+
 # Runtime paths and privileges
 SELF=$PORTABLE_ROOT/$(basename -- "$0")
 ORIG_USER=${SUDO_USER:-${DOAS_USER:-}}
 ORIG_UID=${SUDO_UID:-${DOAS_UID:-}}
 ORIG_GID=${SUDO_GID:-${DOAS_GID:-}}
-if [ "$(id -u)" -eq 0 ] && [ -n "$ORIG_USER" ] && [ "$ORIG_USER" != "root" ]; then
+if is_root && [ -n "$ORIG_USER" ] && [ "$ORIG_USER" != "root" ]; then
     ORIG_HOME=$(getent passwd "$ORIG_USER" 2>/dev/null | cut -d: -f6)
     [ -n "$ORIG_HOME" ] || ORIG_HOME=$(awk -F: -v u="$ORIG_USER" '$1 == u { print $6; exit }' /etc/passwd)
     [ -n "$ORIG_HOME" ] && HOME="$ORIG_HOME"
@@ -53,9 +57,9 @@ if [ -z "$ORIG_UID" ] && [ -n "$ORIG_USER" ]; then
 fi
 
 # Suggest an escalator without invoking it
-if command -v sudo >/dev/null 2>&1; then
+if have sudo; then
     ESCALATOR=sudo
-elif command -v doas >/dev/null 2>&1; then
+elif have doas; then
     ESCALATOR=doas
 else
     ESCALATOR=""
@@ -63,7 +67,7 @@ fi
 
 # Fail instead of calling sudo
 need_root() {
-    if [ "$(id -u)" -eq 0 ]; then
+    if is_root; then
         printf '%s\n' "Failed: $*" >&2
     else
         printf '%s\n' "This needs root: $*" >&2
@@ -74,7 +78,7 @@ need_root() {
 
 # Ask for a root rerun only when not already root
 require_root() {
-    [ "$(id -u)" -eq 0 ] && return 0
+    is_root && return 0
     printf '%s\n' "This needs root: $*" >&2
     printf '%s\n' "Re-run as root: ${ESCALATOR:+$ESCALATOR }$0" >&2
     exit 1
@@ -82,7 +86,7 @@ require_root() {
 
 # Keep files under the invoking user's home owned by that user
 own() {
-    [ "$(id -u)" -eq 0 ] && [ -n "$ORIG_UID" ] && [ -n "$ORIG_GID" ] || return 0
+    is_root && [ -n "$ORIG_UID" ] && [ -n "$ORIG_GID" ] || return 0
     case "$1" in
         "$HOME"/*) chown -h "$ORIG_UID:$ORIG_GID" "$1" 2>/dev/null || true ;;
     esac
@@ -90,7 +94,7 @@ own() {
 
 # Keep the created parent chain under the invoking user's home owned by that user
 own_path() {
-    [ "$(id -u)" -eq 0 ] && [ -n "$ORIG_UID" ] && [ -n "$ORIG_GID" ] || return 0
+    is_root && [ -n "$ORIG_UID" ] && [ -n "$ORIG_GID" ] || return 0
     _p=$1
     while [ -n "$_p" ] && [ "$_p" != "/" ] && [ "$_p" != "$HOME" ]; do
         case "$_p" in
@@ -108,7 +112,7 @@ sed_in_place() {
     _uid=$(stat -c %u -- "$_file" 2>/dev/null)
     _gid=$(stat -c %g -- "$_file" 2>/dev/null)
     sed -i "$@" "$_file" || need_root "edit $_file"
-    if [ "$(id -u)" -eq 0 ] && [ -n "$_uid" ] && [ -n "$_gid" ]; then
+    if is_root && [ -n "$_uid" ] && [ -n "$_gid" ]; then
         chown "$_uid:$_gid" -- "$_file" 2>/dev/null
     fi
 }
@@ -432,15 +436,15 @@ fi
 # first; the distro fallback follows the same root rule as native installs.
 if [ "$PACKAGE_MANAGER" = "flatpak" ] && [ -n "$FLATPAK_ID" ]; then
     _flatpak_was_missing=0
-    if ! command -v flatpak >/dev/null 2>&1; then
+    if ! have flatpak; then
         _flatpak_was_missing=1
-        if command -v pkgcli >/dev/null 2>&1; then
+        if have pkgcli; then
             pkgcli install flatpak
         fi
-        if ! command -v flatpak >/dev/null 2>&1 && command -v pkcon >/dev/null 2>&1; then
+        if ! have flatpak && have pkcon; then
             pkcon install flatpak
         fi
-        if ! command -v flatpak >/dev/null 2>&1; then
+        if ! have flatpak; then
             require_root "install flatpak"
             if [ -r /etc/os-release ]; then
                 . /etc/os-release
@@ -465,7 +469,7 @@ if [ "$PACKAGE_MANAGER" = "flatpak" ] && [ -n "$FLATPAK_ID" ]; then
             esac
         fi
         hash -r 2>/dev/null || :
-        if ! command -v flatpak >/dev/null 2>&1; then
+        if ! have flatpak; then
             printf 'flatpak is still not available after installation.\n' >&2
             exit 1
         fi
@@ -481,7 +485,7 @@ if [ "$PACKAGE_MANAGER" = "flatpak" ] && [ -n "$FLATPAK_ID" ]; then
 
     if [ "$_flatpak_was_missing" = "1" ]; then
         printf 'Flatpak and Flathub were installed. Restart the system, then run this again.\n' >&2
-        command -v notify-send >/dev/null 2>&1 && notify-send "Flatpak installed" "Restart the system, then run this again." 2>/dev/null
+        have notify-send && notify-send "Flatpak installed" "Restart the system, then run this again." 2>/dev/null
         exit 1
     fi
 fi
@@ -750,7 +754,7 @@ printf '%s\n' "$paths" | while IFS= read -r path; do
 
     case "$fstype" in
         ntfs|ntfs3|fuseblk|vfat|msdos|exfat)
-            notify-send "Warning" "'$path' is on a $fstype filesystem."
+            have notify-send && notify-send "Warning" "'$path' is on a $fstype filesystem."
             kill -TERM "$PPID"
             ;;
     esac
@@ -759,7 +763,7 @@ done
 # Install the package if not already installed
 # PACKAGE_MANAGER: "auto"/"native" tries pkgcli > pkcon > distro; "distro" uses only the distro package manager
 if [ "$PACKAGE_MANAGER" = "flatpak" ] && [ -n "$FLATPAK_ID" ]; then
-    command -v flatpak >/dev/null 2>&1 || {
+    have flatpak || {
         printf 'flatpak is not installed\n' >&2
         exit 1
     }
@@ -771,11 +775,11 @@ if [ "$PACKAGE_MANAGER" = "flatpak" ] && [ -n "$FLATPAK_ID" ]; then
         }
     fi
 elif [ -n "$PKG" ]; then
-    if command -v "$PKG" >/dev/null 2>&1; then
+    if have "$PKG"; then
         : # already installed
-    elif { [ "$PACKAGE_MANAGER" = "auto" ] || [ "$PACKAGE_MANAGER" = "native" ]; } && command -v pkgcli >/dev/null 2>&1; then
+    elif { [ "$PACKAGE_MANAGER" = "auto" ] || [ "$PACKAGE_MANAGER" = "native" ]; } && have pkgcli; then
         pkgcli install "$PKG"
-    elif { [ "$PACKAGE_MANAGER" = "auto" ] || [ "$PACKAGE_MANAGER" = "native" ]; } && command -v pkcon >/dev/null 2>&1; then
+    elif { [ "$PACKAGE_MANAGER" = "auto" ] || [ "$PACKAGE_MANAGER" = "native" ]; } && have pkcon; then
         pkcon install "$PKG"
     elif [ "$PACKAGE_MANAGER" = "auto" ] || [ "$PACKAGE_MANAGER" = "native" ] || [ "$PACKAGE_MANAGER" = "distro" ]; then
         require_root "install packages with the system package manager"
@@ -884,6 +888,20 @@ if [ -n "$ENTRIES" ]; then
     }
 fi
 
+# Resolve the active Flatpak deployment. Sets _fp_deploy (the commit
+# directory), _fp_active (the stable active path when it exists), _fp_files,
+# and _fp_bin (files/bin, or files when there is no bin).
+flatpak_resolve() {
+    _fp_deploy=$(flatpak info $_flatpak_scope -l "$FLATPAK_ID" 2>/dev/null) || _fp_deploy=""
+    [ -n "$_fp_deploy" ] || return 1
+    _fp_active=$(dirname -- "$_fp_deploy")/active
+    [ -e "$_fp_active" ] || _fp_active=$_fp_deploy
+    _fp_files=$_fp_active/files
+    _fp_bin=$_fp_files/bin
+    [ -d "$_fp_bin" ] || _fp_bin=$_fp_files
+    return 0
+}
+
 # Flatpak bin side: a portable launcher, not a copy of the immutable app.
 flatpak_launcher() {
     cat > "$1" <<EOF || need_root "write $1"
@@ -915,8 +933,8 @@ flatpak_icon_find() {
 }
 
 flatpak_icon_path() {
-    _deploy=${_flatpak_deploy:-$(flatpak info $_flatpak_scope -l "$FLATPAK_ID" 2>/dev/null)}
-    [ -n "$_deploy" ] || return 1
+    flatpak_resolve || return 1
+    _deploy=$_fp_deploy
 
     _desktop="$_deploy/export/share/applications/$FLATPAK_ID.desktop"
     [ -f "$_desktop" ] || _desktop="$_deploy/files/share/applications/$FLATPAK_ID.desktop"
@@ -1091,11 +1109,10 @@ link_or_backup() {
 # deployment's files/ into the portable bin/ and expose that target read-only.
 # files/ stays a real directory, so Flatpak still lists and updates the app.
 if [ -n "$FLATPAK_ID" ] && [ -n "${FLATPAK_OFFLOAD:-}" ]; then
-    _flatpak_deploy=$(flatpak info $_flatpak_scope -l "$FLATPAK_ID" 2>/dev/null) || _flatpak_deploy=""
-    if [ -z "$_flatpak_deploy" ] || [ ! -d "$_flatpak_deploy/files" ]; then
+    flatpak_resolve && [ -d "$_fp_files" ] || {
         printf 'Cannot offload Flatpak files for %s: deployment not found.\n' "$FLATPAK_ID" >&2
         exit 1
-    fi
+    }
     mkdir -p "$PORTABLE_ROOT/bin" || need_root "create $PORTABLE_ROOT/bin"
     own_path "$PORTABLE_ROOT/bin"
     _flatpak_bin=$(cd -P -- "$PORTABLE_ROOT/bin" && pwd -P) || _flatpak_bin="$PORTABLE_ROOT/bin"
@@ -1107,7 +1124,7 @@ if [ -n "$FLATPAK_ID" ] && [ -n "${FLATPAK_OFFLOAD:-}" ]; then
                 exit 1
                 ;;
         esac
-        _host="$_flatpak_deploy/files/$_off"
+        _host="$_fp_files/$_off"
         _target="$_flatpak_bin/$_off"
 
         if [ -L "$_host" ]; then
@@ -1145,28 +1162,25 @@ fi
 # the portable root. The link points at the stable active path, so it follows
 # updates without modifying the Flatpak installation.
 if [ -n "$FLATPAK_ID" ] && [ -d "$PORTABLE_ROOT/bin" ] && [ ! -L "$PORTABLE_ROOT/bin" ]; then
-    _flatpak_deploy=$(flatpak info $_flatpak_scope -l "$FLATPAK_ID" 2>/dev/null) || _flatpak_deploy=""
-    if [ -n "$_flatpak_deploy" ]; then
-        _flatpak_branch=$(dirname -- "$_flatpak_deploy")
-        _flatpak_active="$_flatpak_branch/active"
-        [ -e "$_flatpak_active" ] || _flatpak_active="$_flatpak_deploy"
-        _flatpak_files="$_flatpak_active/files"
-        _flatpak_ref="$_flatpak_files/bin"
-        [ -d "$_flatpak_ref" ] || _flatpak_ref="$_flatpak_files"
-        if [ -d "$_flatpak_ref" ]; then
-            BIN_TARGET=$_flatpak_ref
-            _flatpak_link="$PORTABLE_ROOT/bin/$FLATPAK_ID"
-            if [ -L "$_flatpak_link" ]; then
-                rm -f -- "$_flatpak_link" || need_root "replace $_flatpak_link"
-            elif [ -e "$_flatpak_link" ]; then
-                printf 'Refusing to replace %s\n' "$_flatpak_link" >&2
-                exit 1
-            fi
-            ln -s "$_flatpak_ref" "$_flatpak_link" || need_root "link $_flatpak_link"
-            own "$_flatpak_link"
+    if flatpak_resolve && [ -d "$_fp_bin" ]; then
+        BIN_TARGET=$_fp_bin
+        _flatpak_link="$PORTABLE_ROOT/bin/$FLATPAK_ID"
+        if [ -L "$_flatpak_link" ]; then
+            rm -f -- "$_flatpak_link" || need_root "replace $_flatpak_link"
+        elif [ -e "$_flatpak_link" ]; then
+            printf 'Refusing to replace %s\n' "$_flatpak_link" >&2
+            exit 1
         fi
+        ln -s "$_fp_bin" "$_flatpak_link" || need_root "link $_flatpak_link"
+        own "$_flatpak_link"
     fi
 fi
+
+# Field codes (%U, %F, ...) from the Exec= line of a desktop file.
+desktop_field_codes() {
+    awk -F'[[:space:]]+' '/^Exec=/ { for (i=1; i<=NF; i++) if ($i ~ /^%[fFuUdDnNickvm]$/) printf "%s ", $i }' "$1" |
+        sed 's/[[:space:]]*$//'
+}
 
 # Desktop entries and icons
 if [ -n "$ENTRIES" ]; then
@@ -1199,15 +1213,8 @@ if [ -n "$ENTRIES" ]; then
             if [ "$ICON_METHOD" = "none" ]; then
                 _icon_value=$_icon_path
             else
-                _icon_ext=${_icon_path##*.}
-                case "$_icon_ext" in
-                    svg|png|xpm|jpg|jpeg) ;;
-                    *) _icon_ext=png ;;
-                esac
-                case "$(file -b --mime-type -- "$_icon_path" 2>/dev/null)" in
-                    image/svg+xml) _icon_ext=svg ;;
-                    image/png) _icon_ext=png ;;
-                esac
+                _icon_ext=$(icon_mime_ext "$_icon_path")
+                [ -n "$_icon_ext" ] || _icon_ext=png
                 _icon_dir="256x256/apps"
                 [ "$_icon_ext" = "svg" ] && _icon_dir="scalable/apps"
                 _icon_target=$ICON_TARGET
@@ -1248,7 +1255,7 @@ if [ -n "$ENTRIES" ]; then
                 *) _file="$PORTABLE_ROOT/$_file" ;;
             esac
             if [ -e "$_file" ]; then
-                _fields=$(awk -F'[[:space:]]+' '/^Exec=/ { for (i=1; i<=NF; i++) if ($i ~ /^%[fFuUdDnNickvm]$/) printf "%s ", $i }' "$_file" | sed 's/[[:space:]]*$//')
+                _fields=$(desktop_field_codes "$_file")
                 if [ -n "$_cmd" ]; then
                     _exec_value=$_cmd
                     in_path "$CMD_TARGET" || _exec_value=$CMD_TARGET/$_cmd
@@ -1295,7 +1302,7 @@ EOF
     if [ "$_entries_icon" = "0" ] && [ -n "$ICON_ID" ] && [ -n "$ICON_TARGET" ] && [ -n "$_icon_ext" ] && [ "$ICON_METHOD" != "none" ]; then
         icon_restore "$ICON_TARGET" "$ICON_ID" "$_icon_default_ext" "$_icon_default_dir"
     fi
-    if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    if have gtk-update-icon-cache; then
         gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" >/dev/null 2>&1
         own "$HOME/.local/share/icons/hicolor/icon-theme.cache"
     fi
@@ -1308,7 +1315,7 @@ else
         for file in "$DESKTOP_FILE_SOURCE"/*.desktop; do
             [ -e "$file" ] || continue
             if [ "$DESKTOP_REWRITE_EXEC" = "yes" ]; then
-                _fields=$(awk -F'[[:space:]]+' '/^Exec=/ { for (i=1; i<=NF; i++) if ($i ~ /^%[fFuUdDnNickvm]$/) printf "%s ", $i }' "$file")
+                _fields=$(desktop_field_codes "$file")
                 _runner_escaped=$(printf '%s\n' "$SELF" | sed 's/[\\&|]/\\&/g')
                 sed_in_place "$file" "s|^Exec=.*|Exec=\"$_runner_escaped\"${_fields:+ $_fields}|"
             fi
@@ -1420,21 +1427,21 @@ fi
 if [ -z "$ENTRIES" ] && [ -n "$ICON" ] && [ -e "$ICON" ] && [ -n "$ICON_ID" ] && [ "$ICON_METHOD" != "none" ]; then
     icon_install "$ICON" "$ICON_TARGET/$ICON_ID.$_icon_ext"
     icon_state_save "$ICON_ID" "$_icon_ext" "$ICON_TARGET"
-    if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    if have gtk-update-icon-cache; then
         gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" >/dev/null 2>&1
         own "$HOME/.local/share/icons/hicolor/icon-theme.cache"
     fi
 elif [ -z "$ENTRIES" ] && [ "$ICON_METHOD" != "none" ] && [ -n "$ICON_ID" ] && [ -n "$ICON_TARGET" ] && [ -n "$_icon_ext" ]; then
     # Source icon was removed: restore the archived icon, or drop the managed one
     icon_restore "$ICON_TARGET" "$ICON_ID" "$_icon_default_ext" "$_icon_default_dir"
-    if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    if have gtk-update-icon-cache; then
         gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" >/dev/null 2>&1
         own "$HOME/.local/share/icons/hicolor/icon-theme.cache"
     fi
 fi
 
 # gio metadata is per-user; skip it when running as root
-if [ "$(id -u)" -ne 0 ] && command -v gio >/dev/null 2>&1; then
+if ! is_root && have gio; then
     _gio_icon=$ICON
     if [ -z "$_gio_icon" ] && [ -n "$FLATPAK_ID" ]; then
         _gio_icon=$(flatpak_icon_path) || _gio_icon=""
@@ -1548,7 +1555,7 @@ EOF
             exit 1
         }
         exec "./$_sel_exec" "$@"
-    elif command -v app_run >/dev/null 2>&1; then
+    elif have app_run; then
         app_run "$@"
         exit $?
     else
@@ -1556,12 +1563,12 @@ EOF
         exit 1
     fi
 elif [ -n "$FLATPAK_ID" ]; then
-    command -v flatpak >/dev/null 2>&1 || {
+    have flatpak || {
         printf 'flatpak is not installed\n' >&2
         exit 1
     }
     exec flatpak run $_flatpak_scope "$FLATPAK_ID" "$@"
-elif [ -n "$PKG" ] && command -v "$PKG" >/dev/null 2>&1; then
+elif [ -n "$PKG" ] && have "$PKG"; then
     nohup "$PKG" >/dev/null 2>&1 &
 fi
 
