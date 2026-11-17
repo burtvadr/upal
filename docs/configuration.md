@@ -478,7 +478,7 @@ When the icon changes, the previous theme icon is kept as `<id>.<ext>1`, then `<
 | Variable | Effect |
 |---|---|
 | `UPAL_DRY_RUN=1` | Print planned actions, change nothing, exit 0. |
-| `UPAL_LOG_LEVEL` | `debug`, `info` (default), `warn`, or `error`. Logs go to stderr as `[YYYY-MM-DD HH:MM:SS] LEVEL message`. |
+| `UPAL_LOG_LEVEL` | `debug`, `info` (default), `warn`, or `error`. Logs go to stderr as `[YYYY-MM-DD HH:MM:SS] LEVEL message`. Levels are colored only when stderr is a terminal; `NO_COLOR` or `TERM=dumb` disables color. |
 | `UPAL_VERBOSE=1` | Old name for `UPAL_LOG_LEVEL=debug`; prints detected and recovered sources. |
 
 ```text

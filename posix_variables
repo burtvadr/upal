@@ -56,10 +56,10 @@ log() {
     _level=$1
     shift
     case "$_level" in
-        DEBUG) _rank=0 ;;
-        WARN)  _rank=2 ;;
-        ERROR) _rank=3 ;;
-        *)     _rank=1 ;;
+        DEBUG) _rank=0; _tag="DEBUG" ;;
+        WARN)  _rank=2; _tag="WARN " ;;
+        ERROR) _rank=3; _tag="ERROR" ;;
+        *)     _rank=1; _tag="INFO " ;;
     esac
     case "$UPAL_LOG_LEVEL" in
         debug) _min=0 ;;
@@ -68,7 +68,20 @@ log() {
         *)     _min=1 ;;
     esac
     [ "$_rank" -ge "$_min" ] || return 0
-    printf '[%s] %-5s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$_level" "$*" >&2
+    # ANSI color is not POSIX, but the escape bytes are portable in practice.
+    # Keep them out of pipes, files, and NO_COLOR output.
+    _color=""
+    _reset=""
+    if [ -t 2 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-}" != "dumb" ]; then
+        _reset=$(printf '\033[0m')
+        case "$_level" in
+            DEBUG) _color=$(printf '\033[36m') ;;
+            WARN)  _color=$(printf '\033[33m') ;;
+            ERROR) _color=$(printf '\033[31m') ;;
+            *)     _color=$(printf '\033[32m') ;;
+        esac
+    fi
+    printf '[%s] %s%s%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$_color" "$_tag" "$_reset" "$*" >&2
 }
 
 die() {
