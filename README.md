@@ -273,6 +273,7 @@ The target engine enforces these rules. The reference template implements an ear
 | `.bak` before replacing host data | implemented |
 | `app_install` / `app_run` hooks, non-app stacks | specified |
 | `bind` method | deferred |
+| Versioned header floor and canonical `upal` CLI | specified |
 | Rust engine | future |
 | Windows support | future, native binary only |
 | macOS `.app` bundles | non-goal |

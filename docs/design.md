@@ -191,7 +191,59 @@ The shell engine is the reference for three reasons:
 2. The behavior is transparent: `ln`, `mv`, `command -v`, and `findmnt` are visible.
 3. It is the test oracle for any future engine.
 
-The shell engine is about 260 lines and has no performance-sensitive work. A Rust port is justified by portability, not speed.
+The shell engine is about 1,600 lines and has no performance-sensitive work. A Rust port is justified by portability, not speed.
+
+## Versioning and the canonical CLI
+
+The runner's filename carries no application identity: `run`, `firefox`, `banana` all launch the same way, and renaming or moving the file changes nothing. There is one exception, the name `upal`.
+
+### Modes
+
+- `./run` launches the application.
+- `./run --upal <command>` runs the toolkit, whatever the file is called.
+- `upal <command>`, through the canonical link, is the same. With no command it prints help and never launches.
+
+The invoked name changes the mode, never the portable root. The root always comes from the directory that holds the real runner file.
+
+### Versions
+
+`UPAL_VERSION` is a constant in the engine, not the header, so every generated runner carries it and `create` copies it. The header declares the format it was written for:
+
+```sh
+# engine
+UPAL_VERSION="0.0.1"
+
+# header
+HEADER_VERSION="1"
+```
+
+- `0.0.z` — fixes and small logic changes. Replaces an older copy in place; no migration.
+- `0.y.0` — may change behavior or the header. Older roots need an explicit migration.
+- `1.0.0` — the engine reads every header it has ever written. Old roots keep working without changes.
+
+The promise is about reading old headers, not about the code standing still.
+
+Forward compatibility is explicit: an engine refuses a header newer than it understands and names the version required. It does not guess. Without that check, a root created by a newer engine on a machine with an older `~/bin/upal` fails silently.
+
+### The canonical link
+
+`upal` is the only name that changes behavior, and the link is a convenience, never a requirement. It is maintained only in CLI mode; launching an application never touches it.
+
+When the link is needed:
+
+- missing or broken — create or replace it
+- points to an older version — replace
+- points to the same or a newer version — leave it
+- a real file — refuse and print the path
+- directory not writable — warn once and continue
+
+The version is read from the target's `UPAL_VERSION` line. The target is never executed to ask, because executing it may launch the application. The directory follows the same order as `CMD_TARGET`: `~/.local/bin`, `~/bin`, then system directories.
+
+A failed link never fails the application.
+
+### Not implemented yet
+
+`--upal`, `UPAL_VERSION`, `HEADER_VERSION`, the header floor, and the canonical link are specified here, not in the engine.
 
 ## Rust and Windows
 
