@@ -481,9 +481,13 @@ When the icon changes, the previous theme icon is kept as `<id>.<ext>1`, then `<
 | `UPAL_LOG_LEVEL` | `debug`, `info` (default), `warn`, or `error`. Logs go to stderr as `[YYYY-MM-DD HH:MM:SS] LEVEL message`. Levels are colored only when stderr is a terminal; `NO_COLOR` or `TERM=dumb` disables color. |
 | `UPAL_VERBOSE=1` | Old name for `UPAL_LOG_LEVEL=debug`; prints detected and recovered sources. |
 
+`INFO` lines report each source and target decision: explicit or inferred, the matching word, the path relative to the portable root with the absolute path in parentheses, and the method (`symlink`, `copy`).
+
 ```text
 [2026-11-17 11:30:01] INFO  UPAL started: /home/user/Apps/MyApp/run
-[2026-11-17 11:30:01] INFO  Data linked: /home/user/.config/MyApp -> /home/user/Apps/MyApp/dat
+[2026-11-17 11:30:01] INFO  Using explicit DAT_SOURCE: dat (/home/user/Apps/MyApp/dat)
+[2026-11-17 11:30:01] INFO  Binary directory found by language assumptions: bin (/home/user/Apps/MyApp/bin)
+[2026-11-17 11:30:01] INFO  Data linked via symlink: /home/user/.config/MyApp -> dat (/home/user/Apps/MyApp/dat)
 [2026-11-17 11:30:01] INFO  Starting command: myapp
 ```
 

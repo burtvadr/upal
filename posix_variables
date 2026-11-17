@@ -89,6 +89,29 @@ die() {
     exit 1
 }
 
+# rel_path <path>: relative to the portable root when inside it.
+rel_path() {
+    case "$1" in
+        "$PORTABLE_ROOT"/*) printf '%s' "${1#"$PORTABLE_ROOT"/}" ;;
+        *) printf '%s' "$1" ;;
+    esac
+}
+
+# show_path <path>: the relative path, with the absolute path in parentheses.
+show_path() {
+    _rel=$(rel_path "$1")
+    if [ "$_rel" = "$1" ]; then
+        printf '%s' "$1"
+    else
+        printf '%s (%s)' "$_rel" "$1"
+    fi
+}
+
+# log_path <level> <label> <path>
+log_path() {
+    log "$1" "$2: $(show_path "$3")"
+}
+
 # Runtime paths and privileges
 SELF=$PORTABLE_ROOT/$(basename -- "$0")
 ORIG_USER=${SUDO_USER:-${DOAS_USER:-}}
@@ -463,7 +486,7 @@ EOF
     if [ "$_count" -gt 1 ]; then
         log ERROR "Ambiguous $_role source; candidates:"
         while IFS= read -r _dir; do
-            [ -n "$_dir" ] && log ERROR "  $_dir"
+            [ -n "$_dir" ] && log ERROR "  $(show_path "$_dir")"
         done <<EOF
 $_matches
 EOF
@@ -476,26 +499,51 @@ EOF
 
 # An empty source uses the name list; an explicit value opts out.
 if [ -z "$DAT_SOURCE" ]; then
-    detect_side dat root "${LANG_INFERRING_DATA:-}"
-    [ -z "$DETECTED" ] && detect_side dat nested "${LANG_INFERRING_DATA:-}"
-    [ -n "$DETECTED" ] && log DEBUG "Detected data source: $DETECTED"
-    DAT_SOURCE=$DETECTED
-    if [ -z "$DAT_SOURCE" ] && [ -n "$DAT_TARGET" ]; then
-        # A target with no named source adopts at the first data word.
-        _first=""
-        for _word in ${LANG_INFERRING_DATA:-}; do
-            _first=$_word
-            break
-        done
-        [ -n "$_first" ] && DAT_SOURCE="$PORTABLE_ROOT/$_first"
-        [ -n "$_first" ] && log DEBUG "No data match; adopting host data at $DAT_SOURCE"
+    log INFO "No DAT_SOURCE specified; using language assumptions"
+    if [ -z "${LANG_INFERRING_DATA:-}" ]; then
+        log INFO "LANG_INFERRING_DATA is empty; data side off"
+    else
+        log DEBUG "LANG_INFERRING_DATA=$LANG_INFERRING_DATA"
+        detect_side dat root "${LANG_INFERRING_DATA:-}"
+        [ -z "$DETECTED" ] && detect_side dat nested "${LANG_INFERRING_DATA:-}"
+        DAT_SOURCE=$DETECTED
+        if [ -n "$DAT_SOURCE" ]; then
+            log_path INFO "Data directory found by language assumptions" "$DAT_SOURCE"
+        elif [ -n "$DAT_TARGET" ]; then
+            # A target with no named source adopts at the first data word.
+            _first=""
+            for _word in ${LANG_INFERRING_DATA:-}; do
+                _first=$_word
+                break
+            done
+            if [ -n "$_first" ]; then
+                DAT_SOURCE="$PORTABLE_ROOT/$_first"
+                log_path INFO "No data directory matched; adopting host data at" "$DAT_SOURCE"
+            fi
+        else
+            log INFO "No data directory matched LANG_INFERRING_DATA; data side off"
+        fi
     fi
+else
+    log_path INFO "Using explicit DAT_SOURCE" "$DAT_SOURCE"
 fi
 if [ -z "$BIN_SOURCE" ] && [ -z "$ENTRIES" ]; then
-    detect_side bin root "${LANG_INFERRING_BIN:-}"
-    [ -z "$DETECTED" ] && detect_side bin nested "${LANG_INFERRING_BIN:-}"
-    [ -n "$DETECTED" ] && log DEBUG "Detected bin source: $DETECTED"
-    BIN_SOURCE=$DETECTED
+    log INFO "No BIN_SOURCE specified; using language assumptions"
+    if [ -z "${LANG_INFERRING_BIN:-}" ]; then
+        log INFO "LANG_INFERRING_BIN is empty; binary side off"
+    else
+        log DEBUG "LANG_INFERRING_BIN=$LANG_INFERRING_BIN"
+        detect_side bin root "${LANG_INFERRING_BIN:-}"
+        [ -z "$DETECTED" ] && detect_side bin nested "${LANG_INFERRING_BIN:-}"
+        BIN_SOURCE=$DETECTED
+        if [ -n "$BIN_SOURCE" ]; then
+            log_path INFO "Binary directory found by language assumptions" "$BIN_SOURCE"
+        else
+            log INFO "No binary directory matched LANG_INFERRING_BIN; binary side off"
+        fi
+    fi
+elif [ -n "$BIN_SOURCE" ]; then
+    log_path INFO "Using explicit BIN_SOURCE" "$BIN_SOURCE"
 fi
 if [ -n "$DAT_SOURCE" ] && [ -n "$BIN_SOURCE" ]; then
     case "$DAT_SOURCE/" in
@@ -551,6 +599,7 @@ if [ -n "$FLATPAK_ID" ]; then
     esac
     if [ -z "$DAT_TARGET" ] && [ -d "$DAT_SOURCE" ]; then
         DAT_TARGET="$HOME/.var/app/$FLATPAK_ID"
+        log INFO "No DAT_TARGET specified; using Flatpak data path: $DAT_TARGET"
     fi
 fi
 if [ "$PACKAGE_MANAGER" = "flatpak" ] && [ -z "$FLATPAK_ID" ]; then
@@ -558,6 +607,12 @@ if [ "$PACKAGE_MANAGER" = "flatpak" ] && [ -z "$FLATPAK_ID" ]; then
 fi
 
 log DEBUG "data=${DAT_SOURCE:-none} data_target=${DAT_TARGET:-none} bin=${BIN_SOURCE:-none} bin_target=${BIN_TARGET:-none}"
+if [ -n "$DAT_SOURCE" ] && [ -z "$DAT_TARGET" ]; then
+    log INFO "No DAT_TARGET specified; data will not be redirected"
+fi
+if [ -n "$BIN_SOURCE" ] && [ -z "$BIN_TARGET" ] && [ -z "$ENTRIES" ] && [ -z "$FLATPAK_ID" ]; then
+    log INFO "No BIN_TARGET specified; binaries will not be linked to the host"
+fi
 
 # Flatpak prerequisites: install flatpak if missing, then make sure the user
 # has flathub. Package managers that can authenticate through polkit are tried
@@ -982,6 +1037,7 @@ in_path() {
 
 # Prefer a writable directory in the user's home; fall back to the system PATH
 if [ -n "$ENTRIES" ] && [ -z "$CMD_TARGET" ]; then
+    log INFO "No CMD_TARGET specified; selecting a command directory"
     for d in "$HOME/.local/bin" "$HOME/bin"; do
         if [ -d "$d" ]; then
             [ -w "$d" ] && { CMD_TARGET=$d; break; }
@@ -1000,6 +1056,7 @@ fi
 
 if [ -n "$ENTRIES" ]; then
     [ -n "${CMD_TARGET:-}" ] || die "no writable command directory found"
+    log INFO "Command links go to: $CMD_TARGET"
 fi
 
 # Resolve the active Flatpak deployment. Sets _fp_deploy (the commit
@@ -1225,7 +1282,7 @@ if [ -n "$FLATPAK_ID" ] && [ -n "${FLATPAK_OFFLOAD:-}" ]; then
         fi
         mv "$_host" "$_target" || need_root "move $_host to $_target"
         ln -s "$_target" "$_host" || need_root "link $_host"
-        log INFO "Offloaded: $_host -> $_target"
+        log INFO "Offloaded via move: $_host -> $(show_path "$_target")"
     done
 
     if ! flatpak override --user --show "$FLATPAK_ID" 2>/dev/null | grep -Fq "$_flatpak_bin:ro"; then
@@ -1239,6 +1296,9 @@ fi
 # gets a link to the active deployment's binary directory. The link uses the
 # stable active path, so it follows updates without modifying the Flatpak
 # installation.
+if [ -n "$FLATPAK_ID" ] && [ -n "$BIN_SOURCE" ] && [ -L "$BIN_SOURCE" ]; then
+    log INFO "Flatpak binaries via symlink: $(show_path "$BIN_SOURCE") -> $(readlink -- "$BIN_SOURCE") (used as-is)"
+fi
 if [ -n "$FLATPAK_ID" ] && [ -n "$BIN_SOURCE" ] && [ -d "$BIN_SOURCE" ] && [ ! -L "$BIN_SOURCE" ]; then
     if flatpak_resolve && [ -d "$_fp_bin" ]; then
         BIN_TARGET=$_fp_bin
@@ -1253,7 +1313,7 @@ if [ -n "$FLATPAK_ID" ] && [ -n "$BIN_SOURCE" ] && [ -d "$BIN_SOURCE" ] && [ ! -
             if rmdir -- "$BIN_SOURCE" 2>/dev/null; then
                 ln -s "$_fp_bin" "$BIN_SOURCE" || need_root "link $BIN_SOURCE"
                 own "$BIN_SOURCE"
-                log INFO "Flatpak binaries: $BIN_SOURCE -> $_fp_bin"
+                log INFO "Flatpak binaries via symlink: $(show_path "$BIN_SOURCE") -> $_fp_bin"
                 _replaced=1
             fi
         fi
@@ -1265,7 +1325,7 @@ if [ -n "$FLATPAK_ID" ] && [ -n "$BIN_SOURCE" ] && [ -d "$BIN_SOURCE" ] && [ ! -
             fi
             ln -s "$_fp_bin" "$_flatpak_link" || need_root "link $_flatpak_link"
             own "$_flatpak_link"
-            log INFO "Flatpak binaries: $_flatpak_link -> $_fp_bin"
+            log INFO "Flatpak reference via symlink: $(show_path "$_flatpak_link") -> $_fp_bin"
         fi
     fi
 fi
@@ -1315,6 +1375,7 @@ if [ -n "$ENTRIES" ]; then
                 [ -n "$_icon_target" ] || _icon_target="$HOME/.local/share/icons/hicolor/$_icon_dir"
                 icon_install "$_icon_path" "$_icon_target/$_icon_id.$_icon_ext"
                 icon_state_save "$_icon_id" "$_icon_ext" "$_icon_target"
+                log INFO "Icon installed ($ICON_METHOD): $(show_path "$_icon_path") -> $_icon_target/$_icon_id.$_icon_ext"
                 _icon_value=$_icon_id
                 _entries_icon=1
             fi
@@ -1334,11 +1395,13 @@ if [ -n "$ENTRIES" ]; then
                 _appexe="$_appdir/$(basename -- "$_exec")"
                 if link_or_backup "$_src" "$_appexe"; then
                     _link_src=$_appexe
+                    log INFO "Entry binary linked via symlink: $(show_path "$_appexe") -> $(show_path "$_src")"
                 fi
             fi
             if [ -d "$CMD_TARGET" ]; then
                 _cmd="${PKG:-$NAME}-$_name"
                 link_or_backup "$_link_src" "$CMD_TARGET/$_cmd" || _cmd=""
+                [ -n "$_cmd" ] && log INFO "Command linked via symlink: $CMD_TARGET/$_cmd -> $(show_path "$_link_src")"
             fi
         fi
 
@@ -1368,6 +1431,7 @@ if [ -n "$ENTRIES" ]; then
                 fi
                 ln -sfn "$_file" "$DESKTOP_FILE_TARGET" || need_root "link $_file"
                 own "$DESKTOP_FILE_TARGET/$(basename -- "$_file")"
+                log INFO "Desktop entry linked via symlink: $(show_path "$_file") -> $DESKTOP_FILE_TARGET/$(basename -- "$_file")"
             fi
         fi
     }
@@ -1414,6 +1478,7 @@ else
             fi
             ln -sfn "$file" "$DESKTOP_FILE_TARGET" || need_root "link $file"
             own "$DESKTOP_FILE_TARGET/$(basename "$file")"
+            log INFO "Desktop entry linked via symlink: $(show_path "$file") -> $DESKTOP_FILE_TARGET/$(basename "$file")"
         done
     fi
 
@@ -1486,7 +1551,7 @@ if [ -n "$DAT_SOURCE" ] && [ -n "$DAT_TARGET" ]; then
     prepare_data_target "$DAT_SOURCE" "$DAT_TARGET"
     link_or_backup "$DAT_SOURCE" "$DAT_TARGET" bak
     source_state_save dat "$DAT_SOURCE"
-    log INFO "Data linked: $DAT_TARGET -> $DAT_SOURCE"
+    log INFO "Data linked via symlink: $DAT_TARGET -> $(show_path "$DAT_SOURCE")"
 fi
 
 # Link binaries from BIN_SOURCE to BIN_TARGET
@@ -1502,7 +1567,7 @@ if [ -z "$ENTRIES" ] && [ -z "$FLATPAK_ID" ] && [ -n "$BIN_TARGET" ] && [ -d "$B
         name=$(basename "$f")
         target="$BIN_TARGET/$name"
         link_or_backup "$f" "$target"
-        log INFO "Binary linked: $target -> $f"
+        log INFO "Binary linked via symlink: $(show_path "$target") -> $(show_path "$f")"
     done
 elif [ -z "$ENTRIES" ] && [ -z "$FLATPAK_ID" ] && [ -n "$BIN_TARGET" ] && { [ -f "$BIN_SOURCE" ] || [ -L "$BIN_SOURCE" ]; }; then
     # BIN_SOURCE is a single file
@@ -1511,11 +1576,11 @@ elif [ -z "$ENTRIES" ] && [ -z "$FLATPAK_ID" ] && [ -n "$BIN_TARGET" ] && { [ -f
         name=$(basename "$BIN_SOURCE")
         target="$BIN_TARGET/$name"
         link_or_backup "$BIN_SOURCE" "$target"
-        log INFO "Binary linked: $target -> $BIN_SOURCE"
+        log INFO "Binary linked via symlink: $(show_path "$target") -> $(show_path "$BIN_SOURCE")"
     else
         # BIN_TARGET is a file path - link directly
         link_or_backup "$BIN_SOURCE" "$BIN_TARGET"
-        log INFO "Binary linked: $BIN_TARGET -> $BIN_SOURCE"
+        log INFO "Binary linked via symlink: $(show_path "$BIN_TARGET") -> $(show_path "$BIN_SOURCE")"
     fi
 fi
 
@@ -1523,6 +1588,7 @@ fi
 if [ -z "$ENTRIES" ] && [ -n "$ICON" ] && [ -e "$ICON" ] && [ -n "$ICON_ID" ] && [ "$ICON_METHOD" != "none" ]; then
     icon_install "$ICON" "$ICON_TARGET/$ICON_ID.$_icon_ext"
     icon_state_save "$ICON_ID" "$_icon_ext" "$ICON_TARGET"
+    log INFO "Icon installed ($ICON_METHOD): $(show_path "$ICON") -> $ICON_TARGET/$ICON_ID.$_icon_ext"
     if have gtk-update-icon-cache; then
         gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" >/dev/null 2>&1
         own "$HOME/.local/share/icons/hicolor/icon-theme.cache"
@@ -1567,6 +1633,7 @@ if [ -n "$MAN" ] && [ -d "$MAN" ]; then
         if [ ! -e "$dst" ] || ! [ "$src" -ef "$dst" ]; then
             [ -w "/usr/share/man/man1" ] || need_root "link man pages into /usr/share/man/man1"
             ln -sfn "$src" "$dst" || need_root "link $dst"
+            log INFO "Man page linked via symlink: $dst -> $(show_path "$src")"
         fi
     done
 fi
