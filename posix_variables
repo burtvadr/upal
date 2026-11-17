@@ -390,7 +390,9 @@ if [ -n "$DAT_SOURCE" ]; then
     DAT_SOURCE=$RESOLVED
 fi
 _old_bin=""
-if [ -n "$BIN_SOURCE" ] && [ -z "$ENTRIES" ]; then
+# A Flatpak bin/ is a host reference, not portable data. Deleting it is not a
+# lost source, so it is not treated as a rename.
+if [ -n "$BIN_SOURCE" ] && [ -z "$ENTRIES" ] && [ -z "$FLATPAK_ID" ]; then
     _bin_before=$BIN_SOURCE
     source_relocate bin "$BIN_SOURCE"
     BIN_SOURCE=$RESOLVED

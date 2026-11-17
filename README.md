@@ -143,7 +143,7 @@ The runner:
 - if `FLATPAK_OFFLOAD` is set, moves the named entries from the active deployment's `files/` into `bin/`, symlinks them back, and adds a read-only filesystem override for `bin/`;
 - never links the app or arch installation directories;
 - leaves host data alone when `dat/` is absent;
-- creates no binary reference when `bin/` is absent;
+- creates no binary reference when `bin/` is absent, and does not treat a deleted `bin/` as a renamed source;
 - generates no launcher; `run` is the launcher and calls `flatpak run`.
 - uses Flatpak's exported desktop entry and icon; a portable `.desktop` or icon is optional.
 
