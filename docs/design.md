@@ -113,11 +113,11 @@ The runner never invokes `sudo`. It runs as the user and stops when a step needs
 
 A planned GTK tool wraps `strace`/`ptrace` to observe which paths an application touches, group them by XDG role, and suggest `DAT_TARGET`, `DAT_METHOD`, and `BIN_MODE`.
 
-It is an authoring tool, not part of the runner. ptrace permissions, Flatpak sandboxes, and filesystem noise make tracing unsuitable for launch-time decisions. The runner keeps explicit configuration plus content detection; the GUI only writes the header.
+It is an authoring tool, not part of the runner. ptrace permissions, Flatpak sandboxes, and filesystem noise make tracing unsuitable for launch-time decisions. The runner keeps explicit configuration, with name inference only when a source is empty; it never inspects directory contents to choose a role. The GUI only writes the header.
 
 ## Flatpak profile
 
-Flatpak is the ideal case: the paths are standardized, so the runner only needs `FLATPAK_ID`. Setting it selects the Flatpak profile when `PACKAGE_MANAGER` is `auto`. `FLATPAK_SCOPE` is `user` by default; `system` selects the system-wide installation for the flathub remote, app install, and launch. The presence of `dat/` maps `~/.var/app/$FLATPAK_ID`; the presence of `bin/` exposes the active deployment's binaries, either as a symlink to `files/bin` or as a real directory containing a `bin/$FLATPAK_ID` reference. The runner installs with `flatpak install` and runs with `flatpak run`.
+Flatpak is the ideal case: the paths are standardized, so the runner only needs `FLATPAK_ID`. Setting it selects the Flatpak profile when `PACKAGE_MANAGER` is `auto`. `FLATPAK_SCOPE` is `user` by default; `system` selects the system-wide installation for the flathub remote, app install, and launch. A data source maps `~/.var/app/$FLATPAK_ID`; a binary source exposes the active deployment's binaries, either as a symlink to `files/bin` or as a real directory containing a `$BIN_SOURCE/$FLATPAK_ID` reference. The runner installs with `flatpak install` and runs with `flatpak run`.
 
 If `flatpak` itself is missing, the runner tries `pkgcli`, then `pkcon`, then the distro package manager. It adds the flathub remote when needed and asks for a reboot after installing flatpak itself. The Flatpak deployment is never linked at the app or arch level. User installs live in `~/.local/share/flatpak/app/$FLATPAK_ID`; system installs live in `/var/lib/flatpak/app/$FLATPAK_ID`. `flatpak run` resolves the scope, architecture, branch, and active deployment; the runner does not hardcode those paths. The `bin/` reference is a symlink to the active deployment's `files/bin` (or `files`); it uses `active`, so it follows Flatpak updates and leaves the installation untouched. When no portable icon is present, the runner uses the app's exported icon for the `gio` folder metadata on the portable root, `BIN_TARGET` when set, and the data target. Flatpak does not support symlinking an individual app installation directory or its arch directory; symlinks make `flatpak list`, update, and uninstall lose the app. Symlinking the deployment's `files` directory itself breaks `flatpak run` in bwrap. `FLATPAK_OFFLOAD` works at the entry level instead: it moves named entries from `files/` into `bin/`, symlinks them back, and adds a read-only filesystem override so the sandbox can resolve the target. This keeps `files/` real, so listing and updates still work. It is experimental and needs a writable app installation. The supported whole-installation route remains `FLATPAK_USER_DIR` or a custom installation; a bind mount offloads one app without the override. The data path is the same for both scopes, and Flatpak resolves a symlinked `~/.var/app/$FLATPAK_ID` (tested with Flatpak 1.16). The reference is a view of the immutable app files, not a copy.
 
@@ -285,7 +285,7 @@ It is the last resort for applications that replace symlinks. Document it, imple
 
 1. Freeze the contract in this repository.
 2. Harden the POSIX engine: safety, dry-run, tests.
-3. Add `env`, `link-out`, `copy`, `copy-sync`, auto-detection, and the backend adapters.
+3. Add `env`, `link-out`, `copy`, `copy-sync`, and the backend adapters.
 4. Port the proof-of-concept runners and add hooks to the template updater.
 5. Add XDG mapping, Flatpak, Snap, Nix, Homebrew, and the search fallback.
 6. Build the GTK discovery tool on `strace`/`ptrace`.

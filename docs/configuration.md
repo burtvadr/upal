@@ -1,10 +1,10 @@
 # Configuration reference
 
-The runner is one file. The header at the top is the configuration; the rest is the engine. Explicit values win; empty values trigger detection.
+The runner is one file. The header at the top is the configuration; the rest is the engine. Explicit values win. An empty `DAT_SOURCE` or `BIN_SOURCE` triggers name inference from `LANG_INFERRING_DATA` or `LANG_INFERRING_BIN`.
 
 Data is the primary use case. Binaries are replaceable; the data mapping is the part that must survive. Host-provided binaries are the default, and folder-owned binaries are opt-in.
 
-> The reference template (`posix_variables`) implements the `link`, binary `out`, icon, desktop-entry, and multi-entry subsets today. The `env`, `link-out`, `copy`, `copy-sync`, `bind`, and bin/dat auto-detection rules below are the target contract.
+> The reference template (`posix_variables`) implements name-based source inference, `link`, binary `out`, icon, desktop-entry, and multi-entry handling today. The `env`, `link-out`, `copy`, `copy-sync`, and `bind` methods below are the target contract.
 
 ## Header
 
@@ -16,39 +16,36 @@ Data is the primary use case. Binaries are replaceable; the data mapping is the 
 PORTABLE_ROOT=$(cd -P -- "$(dirname -- "$0")" && command pwd -P)
 
 # Variables
-PKG=""
 PACKAGE_MANAGER="auto"
 FLATPAK_ID=""
 FLATPAK_SCOPE="user"
 FLATPAK_OFFLOAD=""
-BIN_NAMES=""
+PKG=""
+NAME="$PKG"
 DAT_SOURCE=""
 DAT_TARGET=""
-DAT_METHOD="link"
-DAT_ENV="XDG_CONFIG_HOME"
 BACKUP="yes"
-BIN_MODE="auto"
 BIN_SOURCE=""
+LANG_INFERRING_DATA="dat data dados config user"
+LANG_INFERRING_BIN="bin binary binaries binarios executables executável executáveis executaveis executavel"
 BIN_TARGET=""
 CMD_TARGET=""
+DESKTOP_FILE_NAME=""
 DESKTOP_FILE_SOURCE="$PORTABLE_ROOT"
 DESKTOP_FILE_TARGET="$HOME/.local/share/applications"
-DESKTOP_FILE_NAME=""
 DESKTOP_REWRITE_EXEC="yes"
 # Multi-entry suites: name|bindir|executable|desktop|icon|icon_id
 ENTRIES=""
 DEFAULT_ENTRY=""
 LAUNCHER=""
-DESKTOP_INTEGRATION="yes"
-ICON_SOURCE="$PORTABLE_ROOT"
 ICON_NAME=""
 ICON_ID=""
+ICON_SOURCE="$PORTABLE_ROOT"
 ICON_TARGET=""
 ICON_METHOD="copy"
-NAME="$PKG"
+ICON=""
 CACHE_SOURCE=""
 CACHE_TARGET=""
-CACHE_METHOD="link"
 MAN="$BIN_SOURCE"
 KILL_TERMINAL="yes"
 ```
@@ -59,19 +56,20 @@ KILL_TERMINAL="yes"
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `PKG` | `""` | Package or packages to install, space-separated. Empty means search for `BIN_NAMES`, or use the runner filename. |
+| `PKG` | `""` | Package to install, or command to run when no binaries are linked. Empty means the runner only manages files. |
 | `PACKAGE_MANAGER` | `auto` | `auto`/`native` (PackageKit chain), `distro`, `flatpak`, `snap`, `nix`, `brew`, `toolpak`, `pkgit`, `cpak`, or `none`. |
-| `FLATPAK_ID` | `""` | Flatpak application ID. Setting it selects the Flatpak profile when `PACKAGE_MANAGER` is `auto`; `dat/` and `bin/` select the portable sides. |
+| `FLATPAK_ID` | `""` | Flatpak application ID. Setting it selects the Flatpak profile when `PACKAGE_MANAGER` is `auto`; a data or binary source selects the portable sides. |
 | `FLATPAK_SCOPE` | `user` | `user` or `system`. Scope for the flathub remote, app install, and launch. User scope never needs root. |
-| `FLATPAK_OFFLOAD` | `""` | Space-separated top-level entries under the active deployment's `files/` to move into `$PORTABLE_ROOT/bin/`. Experimental; adds a read-only Flatpak filesystem override. Requires a real `bin/` directory, not a symlink. |
-| `BIN_NAMES` | `""` | Commands to check, link, and run. Empty means the words in `PKG`, or the runner filename. |
-| `DAT_SOURCE` | `""` | Portable data directory. Empty means detect; if `DAT_TARGET` is set, defaults to `$PORTABLE_ROOT/dat`. |
-| `DAT_TARGET` | `""` | Host data path. Empty means XDG mapping when the data directory is XDG-shaped, otherwise no redirection. |
+| `FLATPAK_OFFLOAD` | `""` | Space-separated top-level entries under the active deployment's `files/` to move into `BIN_SOURCE`. Experimental; adds a read-only Flatpak filesystem override. Requires a real binary directory, not a symlink. |
+| `DAT_SOURCE` | `""` | Portable data directory. Empty triggers name inference from `LANG_INFERRING_DATA`; an explicit value disables it. With `DAT_TARGET` set and no match, the first data word is created. |
+| `DAT_TARGET` | `""` | Host data path. Empty means no redirection, except the Flatpak profile derives `~/.var/app/$FLATPAK_ID` when a data source exists. |
 | `DAT_METHOD` | `link` | `link`, `link-out`, `env`, `copy`, `copy-sync`, `bind`, or `none`. |
 | `DAT_ENV` | `XDG_CONFIG_HOME` | Variable exported for the `env` method. |
 | `BACKUP` | `yes` | Adopted host data keeps a `<path>.bak` copy; a real conflict is kept as `<path>1`, `<path>2`. `no` aborts on conflict. |
 | `BIN_MODE` | `auto` | `auto`, `in`, `out`, or `copy`. |
-| `BIN_SOURCE` | `""` | Portable binary directory or single file. Empty means detect. |
+| `BIN_SOURCE` | `""` | Portable binary directory or single file. Empty triggers name inference from `LANG_INFERRING_BIN`; an explicit value disables it. |
+| `LANG_INFERRING_DATA` | `dat data dados config user` | Words that name a data directory. Matched at the portable root and one level below. Several matches abort with the candidates. |
+| `LANG_INFERRING_BIN` | `bin binary binaries binarios executables executável executáveis executaveis executavel` | Words that name a binary directory. Same matching rule. |
 | `BIN_TARGET` | `""` | Host application binary directory or single file, for example `/opt/app-bin`. Used by `out` only. Empty disables binary-out linking. For multi-entry suites, each entry goes in its own `BIN_TARGET/<entry>/` directory. This is not a PATH directory; command links use `CMD_TARGET`. |
 | `CMD_TARGET` | `""` | Directory for per-entry command symlinks. Empty auto-selects `~/.local/bin`, then `~/bin`, then `/usr/local/bin` or `/usr/bin`. Used only when `ENTRIES` is set. |
 | `DESKTOP_FILE_SOURCE` | `$PORTABLE_ROOT` | Where to find `*.desktop` files. |
@@ -81,7 +79,6 @@ KILL_TERMINAL="yes"
 | `ENTRIES` | `""` | Optional multi-entry list: `name\|bindir\|executable\|desktop\|icon\|icon_id` per line. |
 | `DEFAULT_ENTRY` | `""` | Entry launched when no name is given. Empty means the first entry. |
 | `LAUNCHER` | `""` | Optional external launcher/chooser. Runs when no entry name is given; bypassed by `run <entry>`. |
-| `DESKTOP_INTEGRATION` | `yes` | Link and rewrite desktop files. |
 | `ICON_SOURCE` | `$PORTABLE_ROOT` | Where to find the icon. |
 | `ICON_NAME` | `""` | Icon filename. Empty auto-detects a single image in `ICON_SOURCE`; pinning an exact name disables rename detection. |
 | `ICON_ID` | derived | Theme icon name, without extension. Empty uses the package name for an auto-detected icon, or the `ICON_NAME` basename for a pinned file. |
@@ -90,8 +87,7 @@ KILL_TERMINAL="yes"
 | `NAME` | `$PKG` | Display name. |
 | `CACHE_SOURCE` | `""` | Portable cache directory. Off by default. |
 | `CACHE_TARGET` | `""` | Host cache path. |
-| `CACHE_METHOD` | `link` | Same methods as `DAT_METHOD`. |
-| `MAN` | `$BIN_SOURCE` | Directory containing `*.1` man pages. Empty disables man linking. |
+| `MAN` | `$BIN_SOURCE` | Directory containing `*.1` man pages. Empty follows `BIN_SOURCE`; with no binary source, man linking is off. |
 | `KILL_TERMINAL` | `yes` | Close the terminal that launched the runner after the app starts. Ignored when the runner was not started from a terminal. |
 
 ## Data reuse and version compatibility
@@ -102,7 +98,7 @@ UPAL does not convert data between application versions or distributions. A prof
 
 ## Renamed sources
 
-Once a managed source exists, the runner remembers it under `${XDG_STATE_HOME:-$HOME/.local/state}/upal/` by device, inode, and top-level names and types. If `DAT_SOURCE`, `BIN_SOURCE`, or a custom `DESKTOP_FILE_SOURCE` disappears, the next run searches for it before linking or launching:
+Once a managed source exists, the runner remembers it under `${XDG_STATE_HOME:-$HOME/.local/state}/upal/` by device, inode, and top-level names and types. If an explicit `DAT_SOURCE`, `BIN_SOURCE`, or a custom `DESKTOP_FILE_SOURCE` disappears, the next run searches for it before linking or launching:
 
 - an exact inode match is used directly;
 - otherwise at least two top-level entries, a 65% match, and a 15-point lead over the next candidate are required;
@@ -312,7 +308,7 @@ Native mapping:
 | Arch | `pacman`, then `yay` for AUR |
 | openSUSE | `zypper` |
 
-The runner checks `BIN_NAMES` first. If every command exists, no install happens. If one is missing, it installs the corresponding word from `PKG`. If `PKG` is empty, it searches the backend for the command name and installs an exact match. Several matches abort and print the candidates; the runner never installs an ambiguous package.
+The reference template checks whether `PKG` is on `PATH` and installs it when missing. The target contract checks `BIN_NAMES` first. If every command exists, no install happens. If one is missing, it installs the corresponding word from `PKG`. If `PKG` is empty, it searches the backend for the command name and installs an exact match. Several matches abort and print the candidates; the runner never installs an ambiguous package.
 
 Search commands used by the native fallback: `apt-cache search`, `dnf search`, `pacman -Ss`, `zypper search`. `pkgcli` and `pkcon` search first when available.
 
@@ -320,7 +316,7 @@ Packages are installed one per word, so `PKG="adb fastboot heimdall scrcpy"` loo
 
 ## Flatpak profile
 
-Only `FLATPAK_ID` is required. `FLATPAK_SCOPE` defaults to `user`; set it to `system` for a system-wide install. The engine fills the standardized paths, and the presence of `dat/` or `bin/` selects the portable sides. Set `PACKAGE_MANAGER` only if you want to override the backend.
+Only `FLATPAK_ID` is required. `FLATPAK_SCOPE` defaults to `user`; set it to `system` for a system-wide install. The engine fills the standardized paths, and a data or binary source selects the portable sides. Set `PACKAGE_MANAGER` only if you want to override the backend.
 
 | Path | User install | System install |
 |---|---|---|
@@ -333,10 +329,10 @@ Derived values:
 - `PACKAGE_MANAGER="flatpak"` when it was `auto`.
 - `FLATPAK_SCOPE` is `user` by default; `system` uses the system installation.
 - `DAT_TARGET="$HOME/.var/app/$FLATPAK_ID"` when `DAT_SOURCE` exists and `DAT_TARGET` is empty.
-- `DAT_SOURCE` defaults to `$PORTABLE_ROOT/dat`; no `dat/` means no data mapping.
-- `BIN_SOURCE` defaults to `$PORTABLE_ROOT/bin`; no `bin/` means no binary reference.
-- If `bin/` is a symlink, it is used as-is. Point it at the active deployment's `files/bin` (or `files`) to expose the binaries without generated files.
-- If `bin/` is a real directory, `BIN_TARGET` becomes the active deployment's `files/bin` (or `files`), and `bin/$FLATPAK_ID` becomes a read-only reference symlink to it. The link uses `active`, so it follows Flatpak updates.
+- `DAT_SOURCE` is inferred from `LANG_INFERRING_DATA` when empty; no data directory means no data mapping.
+- `BIN_SOURCE` is inferred from `LANG_INFERRING_BIN` when empty; no binary directory means no binary reference.
+- If the binary directory is a symlink, it is used as-is. Point it at the active deployment's `files/bin` (or `files`) to expose the binaries without generated files.
+- If the binary directory is real, `BIN_TARGET` becomes the active deployment's `files/bin` (or `files`), and `$BIN_SOURCE/$FLATPAK_ID` becomes a read-only reference symlink to it. The link uses `active`, so it follows Flatpak updates.
 - No launcher is generated; `run` calls `flatpak run --user|--system "$FLATPAK_ID" "$@"`.
 - If no portable icon is present, the exported Flatpak icon is used for the `gio` folder metadata on the portable root, the data target, and `BIN_TARGET` when set. The icon name comes from the exported desktop file's `Icon=` value, falling back to `$FLATPAK_ID`.
 - The Flatpak installation is not modified. `flatpak run` resolves the architecture, branch, and active deployment.
@@ -357,36 +353,30 @@ MyApp/
 └── bin/   # optional
 ```
 
-Create only `dat/` to preserve data, only `bin/` to keep a binary reference, or both. The runner does not create the side you omit. A previously tracked side that disappears triggers rename recovery; if you intend to stop preserving it, remove the matching `source-<key>-dat` or `source-<key>-bin` state file. A Flatpak `bin/` is the exception: it is a host reference, so deleting it is not treated as a rename and the app still launches.
+Create only `dat/` to preserve data, only `bin/` to keep a binary reference, or both. The runner does not create the side you omit. An explicit side that disappears triggers rename recovery; if you intend to stop preserving it, remove the matching `source-<key>-dat` or `source-<key>-bin` state file. A Flatpak `bin/` is the exception: it is a host reference, so deleting it is not treated as a rename and the app still launches.
 
-The data path is the same for user and system installs. User scope never needs root; system scope may need administrator authentication. `bin/` is optional and has two forms: a symlink to the active deployment's `files/bin` (or `files`), or a real directory holding `bin/$FLATPAK_ID` as a read-only reference to the same deployment. Both leave the Flatpak installation untouched. No launcher is generated; `run` calls `flatpak run`. Flatpak does not support symlinking an individual app installation directory (`~/.local/share/flatpak/app/$FLATPAK_ID` or `/var/lib/flatpak/app/$FLATPAK_ID`); the runner never does that. Symlinking the arch directory (`.../app/$FLATPAK_ID/$ARCH`) is not a workaround: Flatpak stops listing the app, and update/uninstall cannot find it. Symlinking the deployment's `files` directory itself is also not enough: listing and updates still work, but `flatpak run` fails in bwrap. Symlinking an entry **inside** `files` works when the target is exposed to the sandbox with a read-only filesystem override; `FLATPAK_OFFLOAD` does that. It keeps `files` a real directory, so listing and updates still work, and the override lets `flatpak run` resolve the symlink.
+The data path is the same for user and system installs. User scope never needs root; system scope may need administrator authentication. The binary source is optional and has two forms: a symlink to the active deployment's `files/bin` (or `files`), or a real directory holding `$BIN_SOURCE/$FLATPAK_ID` as a read-only reference to the same deployment. Both leave the Flatpak installation untouched. No launcher is generated; `run` calls `flatpak run`. Flatpak does not support symlinking an individual app installation directory (`~/.local/share/flatpak/app/$FLATPAK_ID` or `/var/lib/flatpak/app/$FLATPAK_ID`); the runner never does that. Symlinking the arch directory (`.../app/$FLATPAK_ID/$ARCH`) is not a workaround: Flatpak stops listing the app, and update/uninstall cannot find it. Symlinking the deployment's `files` directory itself is also not enough: listing and updates still work, but `flatpak run` fails in bwrap. Symlinking an entry **inside** `files` works when the target is exposed to the sandbox with a read-only filesystem override; `FLATPAK_OFFLOAD` does that. It keeps `files` a real directory, so listing and updates still work, and the override lets `flatpak run` resolve the symlink.
 
 ```sh
 FLATPAK_OFFLOAD="app-bundle"
 ```
 
-`FLATPAK_OFFLOAD` takes space-separated top-level names under the active deployment's `files/`. For each name, the runner moves it to `$PORTABLE_ROOT/bin/<name>`, replaces the deployment entry with a symlink, and adds `flatpak override --user --filesystem="$PORTABLE_ROOT/bin:ro"`. On an update, the new deployment entry is moved in and the previous target is kept as `<name>1`, `<name>2`. Do not list `.ref`; it is used for deployment locking. The app installation must be writable: user scope needs no root, system scope does. This is experimental; a future Flatpak release can change the behavior.
+`FLATPAK_OFFLOAD` takes space-separated top-level names under the active deployment's `files/`. For each name, the runner moves it to `$BIN_SOURCE/<name>`, replaces the deployment entry with a symlink, and adds `flatpak override --user --filesystem="$BIN_SOURCE:ro"`. On an update, the new deployment entry is moved in and the previous target is kept as `<name>1`, `<name>2`. Do not list `.ref`; it is used for deployment locking. The app installation must be writable: user scope needs no root, system scope does. This is experimental; a future Flatpak release can change the behavior.
 
 The supported whole-installation route is `FLATPAK_USER_DIR` or a custom installation; a bind mount offloads one app without the override. The data path `~/.var/app/$FLATPAK_ID` is separate, and Flatpak resolves a symlinked data directory (tested with Flatpak 1.16). Some applications write outside `~/.var/app/$FLATPAK_ID`; add those paths explicitly with the `redirect` helper in a hook. Heroic's `~/Games` is the common example.
 
 ## Detection
 
-Precedence:
+Empty `DAT_SOURCE` or `BIN_SOURCE` means name inference. An explicit value disables it for that side.
 
-1. Explicit header values.
-2. Contents.
-3. Name assumptions (`LANG_INFERRING_BIN`, `LANG_INFERRING_DATA`).
-4. Defaults, or a warning.
+- The lists `LANG_INFERRING_DATA` and `LANG_INFERRING_BIN` supply the names. Each word is checked at `$PORTABLE_ROOT/<word>` and `$PORTABLE_ROOT/*/<word>`.
+- One match sets the source. Several matches abort and print the candidates. No match leaves that side off.
+- `ENTRIES` disables binary inference; the entries name their own directories.
+- A source cannot live inside the other role: data inside the binary directory, or the reverse, aborts.
+- If `DAT_TARGET` is set, no data directory matched, and the data list is not empty, `$PORTABLE_ROOT/<first data word>` is created, so existing host data can be adopted.
+- Inference never deletes a real file or directory, and it never inspects file contents. The lists are the only source of names.
 
-Rules:
-
-- Search depth is at most two directories.
-- `$PORTABLE_ROOT/bin/dat` and `$PORTABLE_ROOT/dat/bin` are invalid: one role cannot live inside the other.
-- If several candidates match, abort and print them. Do not guess.
-- If `DAT_TARGET` is set and `DAT_SOURCE` is empty, create `$PORTABLE_ROOT/dat`.
-- If `DAT_SOURCE` is set and `DAT_TARGET` is empty, use XDG mapping only when the source has `config`, `data`, `state`, or `cache` subdirectories. Otherwise warn and skip.
-- If neither is set, do not redirect data.
-- Detection never deletes a real file or directory.
+A detected source is used as-is. Rename recovery applies to explicit paths; a detected directory that is later renamed is found again only if its new name is in the list.
 
 ## Hooks
 
@@ -488,7 +478,7 @@ When the icon changes, the previous theme icon is kept as `<id>.<ext>1`, then `<
 | Variable | Effect |
 |---|---|
 | `UPAL_DRY_RUN=1` | Print planned actions, change nothing, exit 0. |
-| `UPAL_VERBOSE=1` | Print detection results and actions. |
+| `UPAL_VERBOSE=1` | Print recovered source paths and actions. |
 
 Environment variables are used instead of CLI flags so application arguments from `%U` and `%F` pass through untouched.
 

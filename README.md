@@ -44,7 +44,7 @@ MyApp/
 └── application.json # optional: Nautilus bundle manifest
 ```
 
-The runner resolves its own location, so the folder can be renamed or moved. The names `bin` and `dat` are defaults, not requirements: the header can point anywhere, and the engine can detect the roles by contents.
+The runner resolves its own location, so the folder can be renamed or moved. The directory names are language assumptions, not requirements: the header can point anywhere, and an empty source is inferred from `LANG_INFERRING_DATA` or `LANG_INFERRING_BIN`.
 
 ## Quick start
 
@@ -74,16 +74,16 @@ The reference template uses `PKG` as the command name. The target contract adds 
 
 ## How it decides
 
-Precedence, highest first:
+The header decides. An empty source triggers name inference:
 
-1. **Explicit header values** — `DAT_SOURCE`, `DAT_TARGET`, `BIN_SOURCE`, `BIN_TARGET`, `CMD_TARGET`.
-2. **Contents** — symlinks in `bin/` mean host-owned binaries; real files mean folder-owned binaries; a directory with `config`, `data`, `state`, or `cache` subdirectories is data.
-3. **Name assumptions** — `dat`, `data`, `dados`, `bin`, `binaries`, and friends, configurable with `LANG_INFERRING_*`.
-4. **Defaults** — no `bin/` means run from `PATH`; no data target means no data redirection.
+1. **Explicit values** — `DAT_SOURCE`, `DAT_TARGET`, `BIN_SOURCE`, `BIN_TARGET`, `CMD_TARGET`. Naming a source disables inference for that side.
+2. **Name lists** — `LANG_INFERRING_DATA` and `LANG_INFERRING_BIN` are checked at the portable root and one level below. One match wins; several abort with the candidates; none leaves that side off. Contents are never inspected.
+3. **Flatpak** — `DAT_TARGET` defaults to `~/.var/app/$FLATPAK_ID` when a data source exists.
+4. **No side** — no binary source means no binary mapping; the app runs from `PATH` or `flatpak run`. No data target means no redirection.
 
-Detection never deletes a real file. Ambiguous layouts abort and print the candidates instead of guessing.
+The defaults are `dat data dados config user` for data and `bin binary binaries binarios executables executável executáveis executaveis executavel` for binaries. Edit the lists to add your own language or layout, or empty a list to disable that inference.
 
-Once a managed source exists, its device, inode, and top-level names and types are remembered under `${XDG_STATE_HOME:-$HOME/.local/state}/upal/`. The state key is the portable root's device and inode, so renaming the root on the same filesystem keeps the recovery history. If `DAT_SOURCE`, `BIN_SOURCE`, or a custom `DESKTOP_FILE_SOURCE` disappears, the next run searches for it before linking or launching. An exact inode match wins. Otherwise at least two top-level entries must match, with 65% confidence and a 15-point lead over the next candidate. A confident match updates the source path and repairs the links. No match, or a tie, stops the run and prints the closest candidates. A broken target link is removed first, but no empty source directory is created when the source was known before; a target that still points to real data is left alone and the run stops. A first run may still create `DAT_SOURCE` to adopt existing host data. The state stays outside the portable folder; remove `source-<key>-<role>` to start fresh.
+Once a managed source exists, its device, inode, and top-level names and types are remembered under `${XDG_STATE_HOME:-$HOME/.local/state}/upal/`. The state key is the portable root's device and inode, so renaming the root on the same filesystem keeps the recovery history. If an explicit `DAT_SOURCE`, `BIN_SOURCE`, or a custom `DESKTOP_FILE_SOURCE` disappears, the next run searches for it before linking or launching. An exact inode match wins. Otherwise at least two top-level entries must match, with 65% confidence and a 15-point lead over the next candidate. A confident match updates the source path and repairs the links. No match, or a tie, stops the run and prints the closest candidates. A broken target link is removed first, but no empty source directory is created when the source was known before; a target that still points to real data is left alone and the run stops. A first run may still create `DAT_SOURCE` to adopt existing host data. The state stays outside the portable folder; remove `source-<key>-<role>` to start fresh.
 
 ## Backends
 
@@ -106,11 +106,11 @@ Once a managed source exists, its device, inode, and top-level names and types a
 
 The runner never calls `sudo`. When a step needs root and it is not root, it stops and prints `Re-run as root: sudo ./runner`. Flatpak user installs and user-local links never need root.
 
-The runner checks `BIN_NAMES` first. If a command is missing, it installs `PKG`. If `PKG` is empty or the package name is unknown, it searches the backend and installs an exact match; several matches abort and print the candidates. It never replaces a working host binary.
+The runner checks whether `PKG` is already on `PATH`; if not, it installs `PKG` with the selected backend. The backend search fallback and the exact-match rule are target contract.
 
 ## Discovery tooling (planned)
 
-A GTK tool will wrap `strace`/`ptrace` to observe which paths an application touches, group them by XDG role, and suggest `DAT_TARGET`, `DAT_METHOD`, and `BIN_MODE`. It is an authoring tool, not part of the runner: ptrace permissions, Flatpak sandboxes, and filesystem noise make it unsuitable for launch-time decisions. The runner keeps explicit configuration plus detection.
+A GTK tool will wrap `strace`/`ptrace` to observe which paths an application touches, group them by XDG role, and suggest `DAT_TARGET`, `DAT_METHOD`, and `BIN_MODE`. It is an authoring tool, not part of the runner: ptrace permissions, Flatpak sandboxes, and filesystem noise make it unsuitable for launch-time decisions. The runner keeps explicit configuration, with name inference only when a source is empty.
 
 ## Flatpak profile
 
@@ -136,14 +136,14 @@ The runner:
 - asks for a reboot after installing flatpak itself, then exits so the next run starts cleanly;
 - installs the app with `flatpak install --user|--system -y flathub` when it is missing;
 - runs with `flatpak run --user|--system "$FLATPAK_ID"`;
-- if `dat/` exists, links `~/.var/app/$FLATPAK_ID` to it;
-- if `bin/` is a symlink, uses it as-is; point it at the active deployment's `files/bin` (or `files`) to expose the binaries without generated files;
-- if `bin/` is a real directory, creates `bin/$FLATPAK_ID` as a read-only reference to the active deployment's `files/bin` (or `files`); the link uses `active`, so it follows Flatpak updates;
+- if a data source exists, links `~/.var/app/$FLATPAK_ID` to it;
+- if the binary source is a symlink, uses it as-is; point it at the active deployment's `files/bin` (or `files`) to expose the binaries without generated files;
+- if the binary source is a real directory, creates `$BIN_SOURCE/$FLATPAK_ID` as a read-only reference to the active deployment's `files/bin` (or `files`); the link uses `active`, so it follows Flatpak updates;
 - if no portable icon is present, uses the Flatpak app's exported icon for the portable root, the data target, and `BIN_TARGET` when set, through `gio`;
-- if `FLATPAK_OFFLOAD` is set, moves the named entries from the active deployment's `files/` into `bin/`, symlinks them back, and adds a read-only filesystem override for `bin/`;
+- if `FLATPAK_OFFLOAD` is set, moves the named entries from the active deployment's `files/` into `BIN_SOURCE`, symlinks them back, and adds a read-only filesystem override for `BIN_SOURCE`;
 - never links the app or arch installation directories;
-- leaves host data alone when `dat/` is absent;
-- creates no binary reference when `bin/` is absent, and does not treat a deleted `bin/` as a renamed source;
+- leaves host data alone when no data source is present;
+- creates no binary reference when no binary source is present, and does not treat a deleted binary source as a renamed one;
 - generates no launcher; `run` is the launcher and calls `flatpak run`.
 - uses Flatpak's exported desktop entry and icon; a portable `.desktop` or icon is optional.
 
@@ -245,7 +245,7 @@ The target engine enforces these rules. The reference template implements an ear
 - A real file or directory is never replaced by a symlink unless the backup succeeds. If a target needs root, the runner stops and asks you to re-run it with sudo; it never invokes sudo itself.
 - Cleanup only touches links whose name and target belong to this runner. No broad `rm "$CMD_TARGET"/*`. A link that already resolves to the same inode is left untouched, even if it points through another path.
 - Every run is idempotent.
-- `UPAL_DRY_RUN=1` prints the planned actions and changes nothing. `UPAL_VERBOSE=1` prints detection results.
+- `UPAL_DRY_RUN=1` prints the planned actions and changes nothing. `UPAL_VERBOSE=1` prints recovered source paths.
 - The filesystem check runs once, on the portable root, and exits cleanly. It does not kill the terminal from a subshell.
 - Paths with spaces and non-ASCII names are quoted everywhere.
 
@@ -260,7 +260,7 @@ The target engine enforces these rules. The reference template implements an ear
 | Binary link-in | specified |
 | `env` and `link-out` data methods | specified |
 | `copy` and `copy-sync` data methods | specified |
-| Auto-detection of `bin` and `dat` | specified |
+| Auto-detection of `bin` and `dat` | implemented (name-based) |
 | Package manager chain (`pkgcli` > `pkcon` > native) | partially implemented; search and `yay` fallback specified |
 | No internal sudo; root check and message | implemented |
 | Flatpak profile (auto paths) | implemented |

@@ -12,10 +12,12 @@ FLATPAK_SCOPE="user"
 FLATPAK_OFFLOAD=""
 PKG=""
 NAME="$PKG"
-DAT_SOURCE="$PORTABLE_ROOT/dat"
+DAT_SOURCE=""
 DAT_TARGET="" 
 BACKUP="yes"
-BIN_SOURCE="$PORTABLE_ROOT/bin"
+BIN_SOURCE=""
+LANG_INFERRING_DATA="dat data dados config user"
+LANG_INFERRING_BIN="bin binary binaries binarios executables executável executáveis executaveis executavel"
 BIN_TARGET=""
 CMD_TARGET=""
 DESKTOP_FILE_NAME=""
@@ -384,6 +386,67 @@ EOF
     [ "${UPAL_VERBOSE:-}" = "1" ] && printf 'Using %s: %s\n' "$_role" "$RESOLVED" >&2
 }
 
+# detect_side <role> <words>
+# An empty source is inferred by name: the portable root and one level below
+# it. Sets DETECTED. Several matches abort instead of guessing.
+detect_side() {
+    _role=$1
+    _matches=""
+    _count=0
+    for _word in $2; do
+        for _dir in "$PORTABLE_ROOT/$_word" "$PORTABLE_ROOT"/*/"$_word"; do
+            [ -d "$_dir" ] || continue
+            if printf '%s\n' "$_matches" | grep -Fxq -- "$_dir"; then
+                continue
+            fi
+            _matches="$_matches$_dir
+"
+            _count=$((_count + 1))
+        done
+    done
+    if [ "$_count" -gt 1 ]; then
+        printf 'Ambiguous %s source; candidates:\n' "$_role" >&2
+        printf '%s' "$_matches" >&2
+        printf 'Set the path explicitly in the header.\n' >&2
+        exit 1
+    fi
+    DETECTED=""
+    [ "$_count" -eq 1 ] && DETECTED=$(printf '%s' "$_matches" | head -n 1)
+}
+
+# An empty source uses the name list; an explicit value opts out.
+if [ -z "$DAT_SOURCE" ]; then
+    detect_side dat "${LANG_INFERRING_DATA:-}"
+    DAT_SOURCE=$DETECTED
+    if [ -z "$DAT_SOURCE" ] && [ -n "$DAT_TARGET" ]; then
+        # A target with no named source adopts at the first data word.
+        _first=""
+        for _word in ${LANG_INFERRING_DATA:-}; do
+            _first=$_word
+            break
+        done
+        [ -n "$_first" ] && DAT_SOURCE="$PORTABLE_ROOT/$_first"
+    fi
+fi
+if [ -z "$BIN_SOURCE" ] && [ -z "$ENTRIES" ]; then
+    detect_side bin "${LANG_INFERRING_BIN:-}"
+    BIN_SOURCE=$DETECTED
+fi
+if [ -n "$DAT_SOURCE" ] && [ -n "$BIN_SOURCE" ]; then
+    case "$DAT_SOURCE/" in
+        "$BIN_SOURCE"/*)
+            printf 'Invalid layout: data source is inside the binary source: %s\n' "$DAT_SOURCE" >&2
+            exit 1
+            ;;
+    esac
+    case "$BIN_SOURCE/" in
+        "$DAT_SOURCE"/*)
+            printf 'Invalid layout: binary source is inside the data source: %s\n' "$BIN_SOURCE" >&2
+            exit 1
+            ;;
+    esac
+fi
+
 # Repair managed sources renamed inside the portable root before using them.
 if [ -n "$DAT_SOURCE" ]; then
     source_relocate dat "$DAT_SOURCE" "$DAT_TARGET"
@@ -399,6 +462,7 @@ if [ -n "$BIN_SOURCE" ] && [ -z "$ENTRIES" ] && [ -z "$FLATPAK_ID" ]; then
     [ "$BIN_SOURCE" != "$_bin_before" ] && _old_bin=$_bin_before
     [ "$MAN" = "$_bin_before" ] && MAN=$BIN_SOURCE
 fi
+[ -z "$MAN" ] && MAN=$BIN_SOURCE
 if [ -n "$DESKTOP_FILE_SOURCE" ] && [ "$DESKTOP_FILE_SOURCE" != "$PORTABLE_ROOT" ] && [ -z "$ENTRIES" ]; then
     source_relocate desktop "$DESKTOP_FILE_SOURCE"
     DESKTOP_FILE_SOURCE=$RESOLVED
@@ -744,10 +808,6 @@ $CACHE_SOURCE
 $MAN
 "
 
-# Language-based directory name assumptions
-LANG_INFERRING_BIN="bin binary binaries binarios executables executável executáveis executaveis executavel"
-LANG_INFERRING_DATA="dat data dados config user"
-
 # Check whether any target path is on a filesystem without POSIX permission support
 printf '%s\n' "$paths" | while IFS= read -r path; do
     [ -z "$path" ] && continue
@@ -1073,20 +1133,25 @@ link_or_backup() {
 }
 
 # Flatpak experimental offload: move named top-level entries out of the active
-# deployment's files/ into the portable bin/ and expose that target read-only.
-# files/ stays a real directory, so Flatpak still lists and updates the app.
+# deployment's files/ into the portable binary source and expose that target
+# read-only. files/ stays a real directory, so Flatpak still lists and updates
+# the app.
 if [ -n "$FLATPAK_ID" ] && [ -n "${FLATPAK_OFFLOAD:-}" ]; then
-    if [ -L "$PORTABLE_ROOT/bin" ]; then
-        printf 'FLATPAK_OFFLOAD needs a real bin/ directory, not a symlink: %s\n' "$PORTABLE_ROOT/bin" >&2
+    if [ -z "$BIN_SOURCE" ]; then
+        printf 'FLATPAK_OFFLOAD needs a binary source; set BIN_SOURCE or create a directory named in LANG_INFERRING_BIN.\n' >&2
+        exit 1
+    fi
+    if [ -L "$BIN_SOURCE" ]; then
+        printf 'FLATPAK_OFFLOAD needs a real binary directory, not a symlink: %s\n' "$BIN_SOURCE" >&2
         exit 1
     fi
     flatpak_resolve && [ -d "$_fp_files" ] || {
         printf 'Cannot offload Flatpak files for %s: deployment not found.\n' "$FLATPAK_ID" >&2
         exit 1
     }
-    mkdir -p "$PORTABLE_ROOT/bin" || need_root "create $PORTABLE_ROOT/bin"
-    own_path "$PORTABLE_ROOT/bin"
-    _flatpak_bin=$(cd -P -- "$PORTABLE_ROOT/bin" && pwd -P) || _flatpak_bin="$PORTABLE_ROOT/bin"
+    mkdir -p "$BIN_SOURCE" || need_root "create $BIN_SOURCE"
+    own_path "$BIN_SOURCE"
+    _flatpak_bin=$(cd -P -- "$BIN_SOURCE" && pwd -P) || _flatpak_bin="$BIN_SOURCE"
 
     for _off in $FLATPAK_OFFLOAD; do
         case "$_off" in
@@ -1129,13 +1194,14 @@ if [ -n "$FLATPAK_ID" ] && [ -n "${FLATPAK_OFFLOAD:-}" ]; then
     fi
 fi
 
-# Flatpak bin reference: a symlinked bin/ is used as-is. A real bin/ gets a
-# link to the active deployment's binary directory. The link uses the stable
-# active path, so it follows updates without modifying the Flatpak installation.
-if [ -n "$FLATPAK_ID" ] && [ -d "$PORTABLE_ROOT/bin" ] && [ ! -L "$PORTABLE_ROOT/bin" ]; then
+# Flatpak bin reference: a symlinked binary source is used as-is. A real one
+# gets a link to the active deployment's binary directory. The link uses the
+# stable active path, so it follows updates without modifying the Flatpak
+# installation.
+if [ -n "$FLATPAK_ID" ] && [ -n "$BIN_SOURCE" ] && [ -d "$BIN_SOURCE" ] && [ ! -L "$BIN_SOURCE" ]; then
     if flatpak_resolve && [ -d "$_fp_bin" ]; then
         BIN_TARGET=$_fp_bin
-        _flatpak_link="$PORTABLE_ROOT/bin/$FLATPAK_ID"
+        _flatpak_link="$BIN_SOURCE/$FLATPAK_ID"
         if [ -L "$_flatpak_link" ]; then
             rm -f -- "$_flatpak_link" || need_root "replace $_flatpak_link"
         elif [ -e "$_flatpak_link" ]; then
@@ -1351,7 +1417,7 @@ if [ -n "$BIN_SOURCE" ] && [ -n "$BIN_TARGET" ] && [ -d "$BIN_TARGET" ]; then
 fi
 
 # Link DAT_SOURCE to DAT_TARGET
-if [ -n "$DAT_TARGET" ]; then
+if [ -n "$DAT_SOURCE" ] && [ -n "$DAT_TARGET" ]; then
     if [ -L "$DAT_SOURCE" ] && [ ! -e "$DAT_SOURCE" ]; then
         printf 'Broken data source link: %s\n' "$DAT_SOURCE" >&2
         exit 1
@@ -1423,12 +1489,12 @@ if ! is_root && have gio; then
         [ -n "$BIN_TARGET" ] && [ -d "$BIN_TARGET" ] && gio set -t string "$BIN_TARGET" metadata::custom-icon "$_icon_uri"
         [ -n "$DAT_TARGET" ] && gio set -t string "$DAT_TARGET" metadata::custom-icon "$_icon_uri"
         # Older versions set the icon on the portable bin; that is not a target.
-        [ -d "$PORTABLE_ROOT/bin" ] && [ ! -L "$PORTABLE_ROOT/bin" ] && gio set -t unset "$PORTABLE_ROOT/bin" metadata::custom-icon 2>/dev/null
+        [ -n "$BIN_SOURCE" ] && [ -d "$BIN_SOURCE" ] && [ ! -L "$BIN_SOURCE" ] && gio set -t unset "$BIN_SOURCE" metadata::custom-icon 2>/dev/null
     else
         gio set -t unset "$PORTABLE_ROOT" metadata::custom-icon 2>/dev/null
         [ -n "$BIN_TARGET" ] && [ -d "$BIN_TARGET" ] && gio set -t unset "$BIN_TARGET" metadata::custom-icon 2>/dev/null
         [ -n "$DAT_TARGET" ] && gio set -t unset "$DAT_TARGET" metadata::custom-icon 2>/dev/null
-        [ -d "$PORTABLE_ROOT/bin" ] && [ ! -L "$PORTABLE_ROOT/bin" ] && gio set -t unset "$PORTABLE_ROOT/bin" metadata::custom-icon 2>/dev/null
+        [ -n "$BIN_SOURCE" ] && [ -d "$BIN_SOURCE" ] && [ ! -L "$BIN_SOURCE" ] && gio set -t unset "$BIN_SOURCE" metadata::custom-icon 2>/dev/null
     fi
 fi
 
